@@ -120,6 +120,7 @@ public class DicomInputStream extends FilterInputStream
     private final byte[] buffer = new byte[12];
     private List<ItemPointer> itemPointers = new ArrayList<ItemPointer>(4);
     private boolean decodeUNWithIVRLE = true;
+    private int skipPrivateTagLength = Integer.MAX_VALUE;
 
     private boolean catBlkFiles;
     private String blkFilePrefix = "blk";
@@ -181,6 +182,20 @@ public class DicomInputStream extends FilterInputStream
      */
     public final void setAllocateLimit(int allocateLimit) {
         this.allocateLimit = allocateLimit;
+    }
+
+    public final int getSkipPrivateTagLength() {
+        return skipPrivateTagLength;
+    }
+
+    /**
+     * Set a length limit to skip reading the values of private tags. All 
+     * the values with a length superior to the limit are ignored.   
+     * 
+     * @param skipPrivateTagLength limit in bytes
+     */
+    public final void setSkipPrivateTagLength(int skipPrivateTagLength) {
+        this.skipPrivateTagLength = skipPrivateTagLength;
     }
 
     public final String getURI() {
@@ -500,7 +515,8 @@ public class DicomInputStream extends FilterInputStream
     public void readValue(DicomInputStream dis, Attributes attrs)
             throws IOException {
         checkIsThis(dis);
-        if (includeBulkData == IncludeBulkData.NO && length != -1 && isBulkData(attrs)) {
+        if ((includeBulkData == IncludeBulkData.NO && length != -1 && isBulkData(attrs))
+                        || (TagUtils.isPrivateTag(tag) && length > skipPrivateTagLength)) {
             skipFully(length);
         } else if (length == 0) {
             attrs.setNull(tag, vr);
