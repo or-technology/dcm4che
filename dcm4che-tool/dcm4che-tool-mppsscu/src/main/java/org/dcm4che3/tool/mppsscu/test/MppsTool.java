@@ -36,7 +36,7 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-package org.dcm4che3.tool.storescu.test;
+package org.dcm4che3.tool.mppsscu.test;
 
 import static org.junit.Assert.assertTrue;
 
@@ -44,14 +44,15 @@ import java.io.File;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.text.MessageFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Properties;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
 import org.dcm4che3.data.Attributes;
 import org.dcm4che3.data.Tag;
+import org.dcm4che3.data.UID;
 import org.dcm4che3.net.ApplicationEntity;
 import org.dcm4che3.net.Association;
 import org.dcm4che3.net.Connection;
@@ -59,45 +60,52 @@ import org.dcm4che3.net.Device;
 import org.dcm4che3.net.DimseRSPHandler;
 import org.dcm4che3.net.IncompatibleConnectionException;
 import org.dcm4che3.net.Status;
-import org.dcm4che3.tool.common.CLIUtils;
-import org.dcm4che3.tool.storescu.StoreSCU;
+import org.dcm4che3.tool.common.test.TestResult;
+import org.dcm4che3.tool.common.test.TestTool;
+import org.dcm4che3.tool.mppsscu.MppsSCU;
 import org.dcm4che3.util.TagUtils;
 
 /**
  * @author Umberto Cappellini <umberto.cappellini@agfa.com>
- * 
+ * @author Hesham Elbadawi <bsdreko@gmail.com>
  */
-public class StoreTest {
+public class MppsTool implements TestTool{
 
     private String host;
     private int port;
     String aeTitle;
+    private Device device;
+    private String sourceAETitle;
     File baseDirectory;
 
-    private long totalSize;
-    private int filesSent;
-    private int warnings;
-    private int failures;
-
+    private int nCreateSent;  
+    private int nCreateWarnings;    
+    private int nCreateFailures;
+    private int nSetSent;  
+    private int nSetFailures;
+    private ArrayList<Attributes> cmdRSP = new ArrayList<Attributes>();
+    private TestResult result;
+    
     /**
      * @param host
      * @param port
      * @param aeTitle
      * @param baseDirectory
      */
-    public StoreTest(String host, int port, String aeTitle, File baseDirectory) {
+    public MppsTool(String host, int port, String aeTitle, File baseDirectory, Device device, String sourceAETitle) {
         super();
         this.host = host;
         this.port = port;
         this.aeTitle = aeTitle;
         this.baseDirectory = baseDirectory;
+        this.sourceAETitle = sourceAETitle;
+        this.device = device;
     }
 
-    public StoreResult store(String testDescription, String fileName)
-            throws IOException, InterruptedException,
+    public void mppsscu(String testDescription, String fileName) throws IOException, InterruptedException,
             IncompatibleConnectionException, GeneralSecurityException {
 
-        long t1, t2;
+        long t1, t2, t3;
 
         File file = new File(baseDirectory, fileName);
 
@@ -105,27 +113,52 @@ public class StoreTest {
                 "file or directory does not exists: " + file.getAbsolutePath(),
                 file.exists());
 
-        Device device = new Device("storescu");
         Connection conn = new Connection();
         device.addConnection(conn);
-        ApplicationEntity ae = new ApplicationEntity("STORESCU");
+        device.setInstalled(true);
+        ApplicationEntity ae = new ApplicationEntity(sourceAETitle);
         device.addApplicationEntity(ae);
         ae.addConnection(conn);
 
-        StoreSCU main = new StoreSCU(ae);
 
-        main.setRspHandlerFactory(new StoreSCU.RSPHandlerFactory() {
+        final MppsSCU main = new MppsSCU(ae);
+        
+        main.setRspHandlerFactory(new MppsSCU.RSPHandlerFactory() {
 
             @Override
-            public DimseRSPHandler createDimseRSPHandler(final File f) {
+            public DimseRSPHandler createDimseRSPHandlerForNCreate(final MppsSCU.MppsWithIUID mppsWithUID) {
 
                 return new DimseRSPHandler(0) {
 
                     @Override
                     public void onDimseRSP(Association as, Attributes cmd,
                             Attributes data) {
+                        
+                        switch(cmd.getInt(Tag.Status, -1)) {
+                        case Status.Success:
+                        case Status.AttributeListError:
+                        case Status.AttributeValueOutOfRange:
+                            mppsWithUID.iuid = cmd.getString(
+                                    Tag.AffectedSOPInstanceUID, mppsWithUID.iuid);
+                            main.addCreatedMpps(mppsWithUID);
+                        }
+                        
                         super.onDimseRSP(as, cmd, data);
-                        StoreTest.this.onCStoreRSP(cmd, f);
+                        MppsTool.this.onNCreateRSP(cmd);
+                    }
+                };
+            }
+            
+            @Override
+            public DimseRSPHandler createDimseRSPHandlerForNSet() {
+                
+                return new DimseRSPHandler(0) {
+                    
+                    @Override
+                    public void onDimseRSP(Association as, Attributes cmd, Attributes data) {
+                        
+                        super.onDimseRSP(as, cmd, data);
+                        MppsTool.this.onNSetRSP(cmd);
                     }
                 };
             }
@@ -136,22 +169,12 @@ public class StoreTest {
         main.getAAssociateRQ().setCalledAET(aeTitle);
         main.getRemoteConnection().setHostname(host);
         main.getRemoteConnection().setPort(port);
-
-        // specify attributes added to the sent object(s). attr can be
-        // specified by keyword or tag value (in hex), e.g. PatientName
-        // or 00100010. Attributes in nested Datasets can be specified
-        // by including the keyword/tag value of the sequence attribute,
-        // e.g. 00400275/00400009 for Scheduled Procedure Step ID in
-        // the Request Attributes Sequence.
-
-        String[] attributes = new String[0];
+        main.setTransferSyntaxes(new String[]{UID.ImplicitVRLittleEndian, UID.ExplicitVRLittleEndian, UID.ExplicitVRBigEndianRetired});
         main.setAttributes(new Attributes());
-        CLIUtils.addAttributes(main.getAttributes(), attributes);
 
         // scan
         t1 = System.currentTimeMillis();
-        main.scanFiles(Arrays.asList(file.getAbsolutePath()), false); // do not
-                                                                      // printout
+        main.scanFiles(Arrays.asList(file.getAbsolutePath()), false); //do not printout
         t2 = System.currentTimeMillis();
 
         // create executor
@@ -166,41 +189,64 @@ public class StoreTest {
             main.open();
 
             t1 = System.currentTimeMillis();
-            main.sendFiles();
+            main.createMpps();
             t2 = System.currentTimeMillis();
+            main.updateMpps();
+            t3 = System.currentTimeMillis();
         } finally {
             main.close();
             executorService.shutdown();
             scheduledExecutorService.shutdown();
         }
 
-        return new StoreResult(testDescription, fileName, totalSize, (t2 - t1),
-                filesSent, warnings, failures);
+        init(new MppsResult(testDescription, fileName, 
+                nCreateSent, nCreateWarnings, nCreateFailures, 
+                nSetSent, nSetFailures, (t2-t1), (t3-t2), cmdRSP));
     }
 
-    private void onCStoreRSP(Attributes cmd, File f) {
+    private void onNCreateRSP(Attributes cmd) {
         int status = cmd.getInt(Tag.Status, -1);
         switch (status) {
         case Status.Success:
-            totalSize += f.length();
-            ++filesSent;
+            ++nCreateSent;
             break;
         case Status.CoercionOfDataElements:
-        case Status.ElementsDiscarded:
-        case Status.DataSetDoesNotMatchSOPClassWarning:
-            totalSize += f.length();
-            ++filesSent;
-            ++warnings;
-            // System.err.println(MessageFormat.format("warning",
-            // TagUtils.shortToHexString(status), f));
-            // System.err.println(cmd);
+        case Status.AttributeListError:
+        case Status.AttributeValueOutOfRange:
+            ++nCreateSent;
+            ++nCreateWarnings;
             break;
         default:
-            ++failures;
+            ++nCreateFailures;
             System.err.println(MessageFormat.format("error",
-                    TagUtils.shortToHexString(status), f));
+                    TagUtils.shortToHexString(status)));
             System.err.println(cmd);
         }
+    }
+
+    private void onNSetRSP(Attributes cmd) {
+        cmdRSP.add(cmd);
+        int status = cmd.getInt(Tag.Status, -1);
+        switch (status) {
+        case Status.Success:
+            ++nSetSent;
+            break;
+        default:
+            ++nSetFailures;
+            System.err.println(MessageFormat.format("error",
+                    TagUtils.shortToHexString(status)));
+            System.err.println(cmd);
+        }
+    }
+
+    @Override
+    public void init(TestResult result) {
+        this.result = result;
+    }
+
+    @Override
+    public TestResult getResult() {
+        return this.result;
     }
 
 }

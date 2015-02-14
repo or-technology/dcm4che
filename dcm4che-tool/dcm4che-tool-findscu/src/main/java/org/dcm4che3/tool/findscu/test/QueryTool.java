@@ -44,7 +44,6 @@ import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -52,38 +51,43 @@ import java.util.concurrent.ScheduledExecutorService;
 
 import org.dcm4che3.data.Attributes;
 import org.dcm4che3.data.ElementDictionary;
-import org.dcm4che3.data.Sequence;
 import org.dcm4che3.data.Tag;
 import org.dcm4che3.data.UID;
 import org.dcm4che3.data.VR;
+import org.dcm4che3.net.ApplicationEntity;
 import org.dcm4che3.net.Association;
+import org.dcm4che3.net.Connection;
+import org.dcm4che3.net.Device;
 import org.dcm4che3.net.DimseRSPHandler;
 import org.dcm4che3.net.IncompatibleConnectionException;
 import org.dcm4che3.net.QueryOption;
 import org.dcm4che3.net.Status;
+import org.dcm4che3.tool.common.test.TestResult;
+import org.dcm4che3.tool.common.test.TestTool;
 import org.dcm4che3.tool.findscu.FindSCU;
 import org.dcm4che3.tool.findscu.FindSCU.InformationModel;
 
 /**
  * @author Umberto Cappellini <umberto.cappellini@agfa.com>
- * 
+ * @author Hesham elbadawi <bsdreko@gmail.com>
  */
-public class QueryTest {
+public class QueryTool implements TestTool {
 
     private String host;
     private int port;
-    String aeTitle;
-
+    private String aeTitle;
+    private Device device;
+    private String sourceAETitle;
+    private List<Attributes> response = new ArrayList<Attributes>();
+    private TestResult result;
+    
     private int numMatches;
-    private ArrayList<String> returnedValues = new ArrayList<String>();
-    private Integer returnTag = null;
 
     private static String[] IVR_LE_FIRST = { UID.ImplicitVRLittleEndian,
             UID.ExplicitVRLittleEndian, UID.ExplicitVRBigEndianRetired };
 
     private Attributes queryatts = new Attributes();
-    private int expectedResult = Integer.MIN_VALUE;
-    private List<String> expectedValues = null;
+    private int expectedMatches = Integer.MIN_VALUE;
     
     private long timeFirst=0;
 
@@ -92,31 +96,39 @@ public class QueryTest {
      * @param port
      * @param aeTitle
      */
-    public QueryTest(String host, int port, String aeTitle) {
+    public QueryTool(String host, int port, String aeTitle, Device device, String sourceAETitle) {
         super();
         this.host = host;
         this.port = port;
         this.aeTitle = aeTitle;
+        this.device = device;
+        this.sourceAETitle = sourceAETitle;
     }
 
-    public QueryResult queryfuzzy(String testDescription) throws IOException,
+    public void queryfuzzy(String testDescription) throws IOException,
     InterruptedException, IncompatibleConnectionException,
     GeneralSecurityException {
-        return query(testDescription,true);
+        query(testDescription,true);
     }
 
-    public QueryResult query(String testDescription) throws IOException,
+    public void query(String testDescription) throws IOException,
     InterruptedException, IncompatibleConnectionException,
     GeneralSecurityException {
-        return query(testDescription,false);
+        query(testDescription,false);
     }
 
     
-    private QueryResult query(String testDescription, boolean fuzzy) throws IOException,
+    private void query(String testDescription, boolean fuzzy) throws IOException,
             InterruptedException, IncompatibleConnectionException,
             GeneralSecurityException {
-
-        FindSCU main = new FindSCU();
+        
+        Connection conn = new Connection();
+        device.addConnection(conn);
+        device.setInstalled(true);
+        ApplicationEntity ae = new ApplicationEntity(sourceAETitle);
+        device.addApplicationEntity(ae);
+        ae.addConnection(conn);
+        FindSCU main = new FindSCU(ae);
         main.getAAssociateRQ().setCalledAET(aeTitle);
         main.getRemoteConnection().setHostname(host);
         main.getRemoteConnection().setPort(port);
@@ -150,44 +162,38 @@ public class QueryTest {
 
         long timeEnd = System.currentTimeMillis();
 
-        if (this.expectedResult >= 0)
-            assertTrue("test[" + testDescription
-                    + "] not returned expected result:" + this.expectedResult
-                    + " but:" + numMatches, numMatches == this.expectedResult);
+        validateMatches(testDescription);
 
-        if (this.expectedValues != null)
-            for (String expectedValue : expectedValues)
-                assertTrue(
-                        "tag[" + ElementDictionary.keywordOf(returnTag, null)
-                                + "] not returned expected value:"
-                                + expectedValue,
-                        returnedValues.contains(expectedValue));
-
-        return new QueryResult(testDescription, expectedResult, numMatches,
-                (timeEnd - timeStart), (timeFirst-timeStart));
+        init(new QueryResult(testDescription, expectedMatches, numMatches,
+                (timeEnd - timeStart), (timeFirst-timeStart), response ));
     }
 
-    public void addTag(int tag, String value) throws Exception {
+    private void validateMatches(String testDescription) {
+        if (this.expectedMatches >= 0)
+            assertTrue("test[" + testDescription
+                    + "] not returned expected result:" + this.expectedMatches
+                    + " but:" + numMatches, numMatches == this.expectedMatches);
+    }
+
+    public void addQueryTag(int tag, String value) throws Exception {
         VR vr = ElementDictionary.vrOf(tag, null);
         queryatts.setString(tag, vr, value);
     }
 
-    public void setReturnTag(int tag) throws Exception {
+    public void clearQueryKeys() {
+        this.queryatts = new Attributes();
+    }
+    public void addAll(Attributes attrs) {
+        queryatts.addAll(attrs);
+    }
+
+    public void addReturnTag(int tag) throws Exception {
         VR vr = ElementDictionary.vrOf(tag, null);
         queryatts.setNull(tag, vr);
-        returnTag = tag;
     }
 
-    public void setExpectedResultsNumeber(int expectedResult) {
-        this.expectedResult = expectedResult;
-    }
-
-    public void addExpectedResult(String value) {
-
-        if (this.expectedValues == null)
-            this.expectedValues = new ArrayList<String>();
-
-        this.expectedValues.add(value);
+    public void setExpectedMatches(int matches) {
+        this.expectedMatches = matches;
     }
 
     private DimseRSPHandler getDimseRSPHandler(int messageID) {
@@ -201,32 +207,26 @@ public class QueryTest {
                 if (numMatches==0) timeFirst = System.currentTimeMillis();
                 int status = cmd.getInt(Tag.Status, -1);
                 if (Status.isPending(status)) {
-                    if (returnTag != null) {
-
-                        if (returnTag.equals(Tag.OtherPatientIDsSequence))
-                        {
-                            Sequence seq = data.getSequence(returnTag);
-                            for (Attributes element : seq)
-                            {
-                                String returnedValue = element.getString(Tag.PatientID);
-                                if (!returnedValues.contains(returnedValue))
-                                    returnedValues.add(returnedValue);
-                            }
-                        }
-                        else
-                        {
-                            String returnedValue = data.getString(returnTag);
-                            if (!returnedValues.contains(returnedValue))
-                                returnedValues.add(returnedValue);
-                        }
-
-                        // System.out.println(returnedValue);
-                    }
+                    response.add(data);
                     ++numMatches;
                 }
             }
         };
 
         return rspHandler;
+    }
+
+    @Override
+    public void init(TestResult result) {
+        this.result = result;
+    }
+
+    @Override
+    public TestResult getResult() {
+        return this.result;
+    }
+
+    public void setAeTitle(String aeTitle) {
+        this.aeTitle = aeTitle;
     }
 }
