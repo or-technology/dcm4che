@@ -40,6 +40,7 @@
 package org.dcm4che3.imageio.codec;
 
 import org.dcm4che3.data.*;
+import org.dcm4che3.imageio.codec.ImageReaderFactory.ImageReaderItem;
 import org.dcm4che3.imageio.codec.jpeg.PatchJPEGLS;
 import org.dcm4che3.imageio.codec.jpeg.PatchJPEGLSImageInputStream;
 import org.dcm4che3.imageio.stream.SegmentedImageInputStream;
@@ -54,6 +55,7 @@ import org.slf4j.LoggerFactory;
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.MemoryCacheImageInputStream;
+
 import java.awt.image.*;
 import java.io.IOException;
 
@@ -82,12 +84,11 @@ public class StreamDecompressor {
         if (tsType == null)
             throw new IllegalArgumentException("Unknown Transfer Syntax: " + tsuid);
         if (tsType.isPixeldataEncapsulated()) {
-            ImageReaderFactory.ImageReaderParam param = ImageReaderFactory.getImageReaderParam(tsuid);
-            if (param == null) {
+            ImageReaderItem readerItem = ImageReaderFactory.getImageReader(tsuid);
+            if (readerItem == null)
                 throw new IllegalArgumentException("Unsupported Transfer Syntax: " + tsuid);
-            }
-            this.decompressor = ImageReaderFactory.getImageReader(param);
-            this.patchJPEGLS = param.getPatchJPEGLS();
+            this.decompressor = readerItem.getImageReader();
+            this.patchJPEGLS = readerItem.getImageReaderParam().getPatchJPEGLS();
             LOG.debug("Decompressor: {}", decompressor.getClass().getName());
         } else {
             this.decompressor = null;

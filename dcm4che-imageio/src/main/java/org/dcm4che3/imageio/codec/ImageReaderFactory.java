@@ -43,12 +43,24 @@ import java.io.InputStream;
 import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
+import java.util.TreeSet;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
-import javax.imageio.spi.ImageReaderSpi;
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamConstants;
+import javax.xml.stream.XMLStreamException;
+import javax.xml.stream.XMLStreamReader;
 
 import org.dcm4che3.conf.core.api.ConfigurableClass;
 import org.dcm4che3.conf.core.api.ConfigurableProperty;
@@ -56,8 +68,6 @@ import org.dcm4che3.conf.core.api.LDAP;
 import org.dcm4che3.imageio.codec.jpeg.PatchJPEGLS;
 import org.dcm4che3.util.ResourceLocator;
 import org.dcm4che3.util.SafeClose;
-import org.dcm4che3.util.StringUtils;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,7 +82,7 @@ public class ImageReaderFactory implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(ImageReaderFactory.class);
 
     private static final long serialVersionUID = -2881173333124498212L;
-
+    
     @LDAP(objectClasses = "dcmImageReader")
     @ConfigurableClass
     public static class ImageReaderParam implements Serializable {
@@ -87,16 +97,21 @@ public class ImageReaderFactory implements Serializable {
 
         @ConfigurableProperty(name = "dcmPatchJPEGLS")
         public PatchJPEGLS patchJPEGLS;
+        
+        private String name;
 
         public ImageReaderParam() {
         }
 
         public ImageReaderParam(String formatName, String className,
-                String patchJPEGLS) {
+                String patchJPEGLS, String name) {
+            if (formatName == null || name == null)
+                throw new IllegalArgumentException();
             this.formatName = formatName;
             this.className = nullify(className);
             this.patchJPEGLS = patchJPEGLS != null && !patchJPEGLS.isEmpty() ? PatchJPEGLS
                     .valueOf(patchJPEGLS) : null;
+            this.name = name;
         }
 
         public String getFormatName() {
@@ -119,16 +134,37 @@ public class ImageReaderFactory implements Serializable {
             return patchJPEGLS;
         }
 
-        public void setPatchJPEGLS(PatchJPEGLS patchJPEGLS) {
-            this.patchJPEGLS = patchJPEGLS;
+        public String tosString() {
+            return name;
         }
     }
-
+    
     private static String nullify(String s) {
         return s == null || s.isEmpty() || s.equals("*") ? null : s;
     }
+    
+    public static class ImageReaderItem {
 
-    private static ImageReaderFactory defaultFactory;
+        private final ImageReader imageReader;
+        private final ImageReaderParam imageReaderParam;
+
+        public ImageReaderItem(ImageReader imageReader, ImageReaderParam imageReaderParam) {
+            super();
+            this.imageReader = imageReader;
+            this.imageReaderParam = imageReaderParam;
+        }
+
+        public ImageReader getImageReader() {
+            return imageReader;
+        }
+
+        public ImageReaderParam getImageReaderParam() {
+            return imageReaderParam;
+        }
+
+    }
+
+    private static volatile ImageReaderFactory defaultFactory;
 
     @LDAP(distinguishingField = "dicomTransferSyntax", noContainerNode = true)
     @ConfigurableProperty(
@@ -136,13 +172,13 @@ public class ImageReaderFactory implements Serializable {
             label = "Image Readers",
             description = "Image readers by transfer syntaxes"
     )
-    private Map<String, ImageReaderParam> map = new LinkedHashMap<String, ImageReaderParam>();
+    private Map<String, List<ImageReaderParam>> map = new LinkedHashMap<String, List<ImageReaderParam>>();
 
-    public Map<String, ImageReaderParam> getMap() {
+    public Map<String, List<ImageReaderParam>> getMap() {
         return map;
     }
 
-    public void setMap(Map<String, ImageReaderParam> map) {
+    public void setMap(Map<String, List<ImageReaderParam>> map) {
         this.map = map;
     }
 
@@ -166,16 +202,87 @@ public class ImageReaderFactory implements Serializable {
 
     private static ImageReaderFactory initDefault() {
         ImageReaderFactory factory = new ImageReaderFactory();
-        String name = System.getProperty(ImageReaderFactory.class.getName(),
-                "org/dcm4che3/imageio/codec/ImageReaderFactory.properties");
+        String name =
+            System.getProperty(ImageReaderFactory.class.getName(), "org/dcm4che3/imageio/codec/ImageReaderFactory.xml");
         try {
             factory.load(name);
         } catch (Exception e) {
-            throw new RuntimeException(
-                    "Failed to load Image Reader Factory configuration from: "
-                            + name, e);
+            throw new RuntimeException("Failed to load Image Reader Factory configuration from: " + name, e);
         }
         return factory;
+    }
+
+    public void load(InputStream stream) throws IOException {
+        XMLStreamReader xmler = null;
+        try {
+            XMLInputFactory xmlif = XMLInputFactory.newInstance();
+            xmler = xmlif.createXMLStreamReader(stream);
+
+            int eventType;
+            while (xmler.hasNext()) {
+                eventType = xmler.next();
+                switch (eventType) {
+                    case XMLStreamConstants.START_ELEMENT:
+                        String key = xmler.getName().getLocalPart();
+                        if ("ImageReaderFactory".equals(key)) {
+                            while (xmler.hasNext()) {
+                                eventType = xmler.next();
+                                switch (eventType) {
+                                    case XMLStreamConstants.START_ELEMENT:
+                                        key = xmler.getName().getLocalPart();
+                                        if ("element".equals(key)) {
+                                            String tsuid = xmler.getAttributeValue(null, "tsuid");
+                                            
+                                            boolean state = true;
+                                            while (xmler.hasNext() && state) {
+                                                eventType = xmler.next();
+                                                switch (eventType) {
+                                                    case XMLStreamConstants.START_ELEMENT:
+                                                        key = xmler.getName().getLocalPart();
+                                                        if ("reader".equals(key)) {
+                                                            ImageReaderParam param =
+                                                                new ImageReaderParam(xmler.getAttributeValue(null,
+                                                                    "format"), xmler.getAttributeValue(null, "class"),
+                                                                    xmler.getAttributeValue(null, "patchJPEGLS"),
+                                                                    xmler.getAttributeValue(null, "name"));
+                                                            put(tsuid, param);
+                                                        }
+                                                        break;
+                                                    case XMLStreamConstants.END_ELEMENT:
+                                                        if ("element".equals(xmler.getName().getLocalPart())) {
+                                                            state = false;
+                                                        }
+                                                        break;
+                                                    default:
+                                                        break;
+                                                }
+                                            }
+                                        }
+                                        break;
+                                    default:
+                                        break;
+                                }
+                            }
+                        }
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+
+        catch (XMLStreamException e) {
+            LOG.error("Cannot read DICOM Readers! " + e.getMessage());
+        } finally {
+            if (xmler != null) {
+                try {
+                    xmler.close();
+                } catch (XMLStreamException e) {
+                    LOG.debug(e.getMessage());
+                }
+            }
+            SafeClose.close(stream);
+        }
     }
 
     public void load(String name) throws IOException {
@@ -184,8 +291,9 @@ public class ImageReaderFactory implements Serializable {
             url = new URL(name);
         } catch (MalformedURLException e) {
             url = ResourceLocator.getResourceURL(name, this.getClass());
-            if (url == null)
+            if (url == null) {
                 throw new IOException("No such resource: " + name);
+            }
         }
         InputStream in = url.openStream();
         try {
@@ -195,17 +303,7 @@ public class ImageReaderFactory implements Serializable {
         }
     }
 
-    public void load(InputStream in) throws IOException {
-        Properties props = new Properties();
-        props.load(in);
-        for (Map.Entry<Object, Object> entry : props.entrySet()) {
-            String[] ss = StringUtils.split((String) entry.getValue(), ':');
-            map.put((String) entry.getKey(), new ImageReaderParam(ss[0], ss[1],
-                    ss[2]));
-        }
-    }
-
-    public ImageReaderParam get(String tsuid) {
+    public List<ImageReaderParam> get(String tsuid) {
         return map.get(tsuid);
     }
 
@@ -213,15 +311,20 @@ public class ImageReaderFactory implements Serializable {
         return map.containsKey(tsuid);
     }
 
-    public ImageReaderParam put(String tsuid, ImageReaderParam param) {
-        return map.put(tsuid, param);
+    private boolean put(String tsuid, ImageReaderParam param) {
+        List<ImageReaderParam> readerSet = get(tsuid);
+        if (readerSet == null) {
+            readerSet = new ArrayList<ImageReaderParam>();
+            map.put(tsuid, readerSet);
+        }
+        return readerSet.add(param);
     }
 
-    public ImageReaderParam remove(String tsuid) {
+    private List<ImageReaderParam> remove(String tsuid) {
         return map.remove(tsuid);
     }
 
-    public Set<Entry<String, ImageReaderParam>> getEntries() {
+    public Set<Entry<String, List<ImageReaderParam>>> getEntries() {
         return Collections.unmodifiableMap(map).entrySet();
     }
 
@@ -229,80 +332,26 @@ public class ImageReaderFactory implements Serializable {
         map.clear();
     }
 
-    public static ImageReaderParam getImageReaderParam(String tsuid) {
-        return getDefault().get(tsuid);
-    }
-
-    public static boolean canDecompress(String tsuid) {
-        return getDefault().contains(tsuid);
-    }
-
-    public static ImageReader getImageReader(ImageReaderParam param) {
-
-        if (Boolean.parseBoolean(System.getProperty("dcm4che.useImageIOServiceRegistry"))){
-            LOG.debug("getImageReader() - Load imageReader by using ImageIO. Get readers by format name: {}", param.formatName);
-            Iterator<ImageReader> readers = ImageIO.getImageReadersByFormatName(param.formatName);
-
-            if (!readers.hasNext()){
-                throw new RuntimeException("No Image Reader for format: " + param.formatName + " registered");
-            }
-
-            ImageReader imageReader = null;
-
-            if (param.className == null){
-                LOG.debug("getImageReader() - no className set. Use first reader in list");
-                imageReader = readers.next();
-            }else{
-                LOG.debug("getImageReader() - className set to \"{}\"", param.className);
-                final ImageReader firstImageReader = readers.next();
-                imageReader = firstImageReader;
-                while (imageReader != null && !imageReader.getClass().getName().equals(param.className)){
-                    imageReader = readers.hasNext() ? readers.next() : null;
-                }
-
-                if (imageReader == null){
-                    LOG.warn("getImageReader() - Preferred reader \"{}\" not found. Use first in list.", param.className);
-                    imageReader = firstImageReader;
-                }
-            }
-
-            LOG.debug("Return found reader: {}", imageReader);
-            return imageReader;
-        }
-        
-        // ImageReaderSpi are loaded through the java ServiceLoader,
-        // instead of ImageIO ServiceRegistry
-        Iterator<ImageReaderSpi> iter = ServiceLoader
-                .load(ImageReaderSpi.class).iterator();
-
-        try {
-
-            if (iter != null && iter.hasNext()) {
-
-                do {
-                    ImageReaderSpi readerspi = iter.next();
-                    if (supportsFormat(readerspi.getFormatNames(),
-                            param.formatName)) {
-
-                        ImageReader reader = readerspi.createReaderInstance();
-
-                        if (param.className == null
-                                || param.className.equals(reader.getClass().getName()))
-                            return reader;
+    public static ImageReaderItem getImageReader(String tsuid) {
+        List<ImageReaderParam> list = getDefault().get(tsuid);        
+        if (list != null) {
+            synchronized (list) {
+                for (Iterator<ImageReaderParam> it = list.iterator(); it.hasNext();) {
+                    ImageReaderParam imageParam = it.next();
+                    String cl = imageParam.getClassName();
+                    Iterator<ImageReader> iter = ImageIO.getImageReadersByFormatName(imageParam.getFormatName());
+                    while (iter.hasNext()) {
+                        ImageReader reader = iter.next();
+                        if (cl == null || reader.getClass().getName().equals(cl)) {
+                            return new ImageReaderItem(reader, imageParam);
+                        }
                     }
-                } while (iter.hasNext());
+                }
             }
-
-            throw new RuntimeException("No Image Reader for format: "
-                    + param.formatName + " registered");
-
-        } catch (IOException e) {
-            throw new RuntimeException(
-                    "Error instantiating Reader for format: "
-                            + param.formatName);
         }
-    }
-
+        return null;
+    }    
+    
     private static boolean supportsFormat(String[] supportedFormats,
             String format) {
         boolean supported = false;
