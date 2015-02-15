@@ -1,0 +1,124 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<parent>
+		<groupId>org.dcm4che</groupId>
+		<artifactId>dcm4che-parent</artifactId>
+		<version>3.3.6-SNAPSHOT</version>
+	</parent>
+	<artifactId>dcm4che-imageio-codec</artifactId>
+	<name>dcm4che-imageio-codec</name>
+
+	<properties>
+		<weasis.version>2.0.4-SNAPSHOT</weasis.version>
+		<jpeg.version>1.0.1-6b</jpeg.version>
+
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+	</properties>
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-assembly-plugin</artifactId>
+				<version>2.5.3</version>
+				<executions>
+					<execution>
+						<id>native</id>
+						<phase>prepare-package</phase>
+						<goals>
+							<goal>single</goal>
+						</goals>
+						<configuration>
+							<inherited>false</inherited>
+							<descriptors>
+								<descriptor>src/assembly/native-libs.xml</descriptor>
+							</descriptors>
+						</configuration>
+					</execution>
+					<execution>
+						<id>codecs-libs</id>
+						<phase>package</phase>
+						<goals>
+							<goal>single</goal>
+						</goals>
+						<configuration>
+							<inherited>false</inherited>
+							<appendAssemblyId>false</appendAssemblyId>
+							<descriptors>
+								<descriptor>src/assembly/codecs.xml</descriptor>
+							</descriptors>
+						</configuration>
+					</execution>
+					<!-- <execution> -->
+					<!-- <id>dcm4che3</id> -->
+					<!-- <phase>package</phase> -->
+					<!-- <goals> -->
+					<!-- <goal>attached</goal> -->
+					<!-- </goals> -->
+					<!-- <configuration> -->
+					<!-- <inherited>false</inherited> -->
+					<!-- <finalName>dcm4che3-dist</finalName> -->
+					<!-- <appendAssemblyId>false</appendAssemblyId> -->
+					<!-- <descriptors> -->
+					<!-- <descriptor>src/assembly/native-libs.xml</descriptor> -->
+					<!-- </descriptors> -->
+					<!-- </configuration> -->
+					<!-- </execution> -->
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+
+	<dependencies>
+		<dependency>
+			<groupId>org.weasis</groupId>
+			<artifactId>weasis-image-jni</artifactId>
+			<version>${weasis.version}</version>
+			<type>jar</type>
+		</dependency>
+		<dependency>
+			<groupId>org.weasis.jpeg</groupId>
+			<artifactId>weasis-jpeg-codec</artifactId>
+			<version>${weasis.version}</version>
+			<type>jar</type>
+		</dependency>
+
+		<!-- ******** JPEG native codecs ******** -->
+		<dependency>
+			<groupId>org.weasis.thirdparty.jpeg</groupId>
+			<artifactId>libjnilibijg</artifactId>
+			<version>${jpeg.version}</version>
+			<type>so</type>
+			<classifier>linux-x86-64</classifier>
+		</dependency>
+		<dependency>
+			<groupId>org.weasis.thirdparty.jpeg</groupId>
+			<artifactId>libjnilibijg</artifactId>
+			<version>${jpeg.version}</version>
+			<type>so</type>
+			<classifier>linux-x86</classifier>
+		</dependency>
+		<dependency>
+			<groupId>org.weasis.thirdparty.jpeg</groupId>
+			<artifactId>libjnilibijg</artifactId>
+			<version>${jpeg.version}</version>
+			<type>jnilib</type>
+			<classifier>macosx-x86-64</classifier>
+		</dependency>
+		<dependency>
+			<groupId>org.weasis.thirdparty.jpeg</groupId>
+			<artifactId>jnilibijg</artifactId>
+			<version>${jpeg.version}</version>
+			<type>dll</type>
+			<classifier>windows-x86</classifier>
+		</dependency>
+		<dependency>
+			<groupId>org.weasis.thirdparty.jpeg</groupId>
+			<artifactId>jnilibijg</artifactId>
+			<version>${jpeg.version}</version>
+			<type>dll</type>
+			<classifier>windows-x86-64</classifier>
+		</dependency>
+		
+	</dependencies>
+</project>
