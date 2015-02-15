@@ -66,6 +66,7 @@ import org.dcm4che3.data.VR;
 import org.dcm4che3.data.Value;
 import org.dcm4che3.image.Overlays;
 import org.dcm4che3.imageio.codec.ImageReaderFactory.ImageReaderItem;
+import org.dcm4che3.imageio.codec.ImageWriterFactory.ImageWriterItem;
 import org.dcm4che3.image.PhotometricInterpretation;
 import org.dcm4che3.imageio.codec.jpeg.PatchJPEGLS;
 import org.dcm4che3.imageio.codec.jpeg.PatchJPEGLSImageOutputStream;
@@ -129,21 +130,20 @@ public class Compressor extends Decompressor implements Closeable {
         if (imageParams == null)
             return false;
 
-        ImageWriterFactory.ImageWriterParam param =
-                ImageWriterFactory.getImageWriterParam(compressTsuid);
-        if (param == null)
+        ImageWriterItem writer = ImageWriterFactory.getImageWriterParam(compressTsuid);
+        if (writer == null)
             throw new UnsupportedOperationException(
                     "Unsupported Transfer Syntax: " + compressTsuid);
 
-        this.compressor = ImageWriterFactory.getImageWriter(param);
+        this.compressor = writer.getImageWriter();
         LOG.debug("Compressor: {}", compressor.getClass().getName());
-        this.compressPatchJPEGLS = param.patchJPEGLS;
+        this.compressPatchJPEGLS = writer.getImageWriterParam().getPatchJPEGLS();
 
         this.compressParam = compressor.getDefaultWriteParam();
         int count = 0;
         int maxPixelValueError = -1;
         int avgPixelValueBlockSize = 1;
-        for (Property property : cat(param.getImageWriteParams(), params)) {
+        for (Property property : cat(writer.getImageWriterParam().getImageWriteParams(), params)) {
             String name = property.getName();
             if (name.equals("maxPixelValueError"))
                 maxPixelValueError = ((Number) property.getValue()).intValue();

@@ -149,7 +149,6 @@ public class ImageReaderFactory implements Serializable {
         private final ImageReaderParam imageReaderParam;
 
         public ImageReaderItem(ImageReader imageReader, ImageReaderParam imageReaderParam) {
-            super();
             this.imageReader = imageReader;
             this.imageReaderParam = imageReaderParam;
         }
@@ -291,9 +290,8 @@ public class ImageReaderFactory implements Serializable {
             url = new URL(name);
         } catch (MalformedURLException e) {
             url = ResourceLocator.getResourceURL(name, this.getClass());
-            if (url == null) {
+            if (url == null)
                 throw new IOException("No such resource: " + name);
-            }
         }
         InputStream in = url.openStream();
         try {
@@ -352,20 +350,4 @@ public class ImageReaderFactory implements Serializable {
         return null;
     }    
     
-    private static boolean supportsFormat(String[] supportedFormats,
-            String format) {
-        boolean supported = false;
-
-        if (format != null && supportedFormats != null) {
-
-            for (int i = 0; i < supportedFormats.length; i++)
-                if (supportedFormats[i] != null
-                        && supportedFormats[i].trim().equalsIgnoreCase(
-                                format.trim()))
-                    supported = true;
-        }
-
-        return supported;
-    }
-
 }
