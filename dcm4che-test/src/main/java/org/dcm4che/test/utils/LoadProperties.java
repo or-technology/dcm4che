@@ -41,7 +41,6 @@ package org.dcm4che.test.utils;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.net.URL;
 import java.util.Properties;
 
 /**
@@ -57,19 +56,16 @@ public class LoadProperties {
         if (props == null)
         {
             props = new Properties();
-            String fileURL = System.getProperty("configFileURL");
+            String fileURL = System.getProperty("defaultParams");
             
             if (fileURL != null && fileURL.length()>0)
             {
                 //load passed file
-                System.out.println("Loaded property configFileURL " + fileURL);
                 props.load(new FileInputStream(new File(fileURL)));
             }
             else
             {
-                //load defaults
-                URL defaultConfig = resourceClass.getResource("/defaultConfig.properties");
-                props.load(new FileInputStream(new File(defaultConfig.getFile())));
+                throw new IOException("A default configuration property defaultParams must be defined");
             }
         }
         

@@ -42,17 +42,14 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.TimeZone;
+import java.util.*;
 import java.util.regex.Pattern;
 
 import org.dcm4che3.data.Tag;
 import org.dcm4che3.data.UID;
 import org.dcm4che3.data.IOD.DataElement;
 import org.dcm4che3.data.IOD.DataElementType;
+import org.dcm4che3.io.BulkDataDescriptor;
 import org.dcm4che3.io.DicomEncodingOptions;
 import org.dcm4che3.io.DicomInputStream;
 import org.dcm4che3.io.DicomOutputStream;
@@ -1371,6 +1368,7 @@ public class Attributes implements Serializable {
         String[] darange = splitRange(da);
         String[] tmrange = splitRange(tm);
         DatePrecision precision = new DatePrecision();
+        TimeZone tz = getTimeZone();
         return new DateRange(
                 darange[0] == null ? null
                         : VR.DT.toDate(tmrange[0] == null
@@ -1409,6 +1407,10 @@ public class Attributes implements Serializable {
             cs = SpecificCharacterSet.DEFAULT;
 
         return cs;
+    }
+
+    public boolean containsTimezoneOffsetFromUTC() {
+        return containsTimezoneOffsetFromUTC;
     }
 
     public void setDefaultTimeZone(TimeZone tz) {
@@ -1455,6 +1457,7 @@ public class Attributes implements Serializable {
         TimeZone tz = DateUtils.timeZone(utcOffset);
         updateTimezone(getTimeZone(), tz);
         setString(Tag.TimezoneOffsetFromUTC, VR.SH, utcOffset);
+        this.tz = tz;
     }
 
     /**
@@ -1478,10 +1481,13 @@ public class Attributes implements Serializable {
             setString(Tag.TimezoneOffsetFromUTC, VR.SH,
                     DateUtils.formatTimezoneOffsetFromUTC(tz));
         }
-        this.tz=null;
+        this.tz = tz;
     }
 
     private void updateTimezone(TimeZone from, TimeZone to) {
+        if (from.hasSameRules(to))
+            return;
+
         for (int i = 0; i < size; i++) {
             Object val = values[i];
             if (val instanceof Sequence) {
@@ -1490,7 +1496,9 @@ public class Attributes implements Serializable {
                     item.updateTimezone(item.getTimeZone(), to);
                     item.remove(Tag.TimezoneOffsetFromUTC);
                 }
-            } else if (vrs[i] == VR.TM || vrs[i] == VR.DT)
+            } else if (vrs[i] == VR.TM && tags[i] != Tag.PatientBirthTime
+                    || vrs[i] == VR.DT && tags[i] != Tag.ContextGroupVersion
+                                       && tags[i] != Tag.ContextGroupLocalVersion)
                 updateTimezone(from, to, i);
         }
     }
@@ -1510,7 +1518,7 @@ public class Attributes implements Serializable {
             } else
                 values[tmIndex] = updateTimeZoneDT(from, to, (String) tm);
         } else {
-            int daTag = TagUtils.daTagOf(tmTag);
+            int daTag = ElementDictionary.getElementDictionary(privateCreatorOf(tmTag)).daTagOf(tmTag);
             int daIndex = daTag != 0 ? indexOf(daTag) : -1;
             Object da = daIndex >= 0 ? decodeStringValue(daIndex) : Value.NULL;
 
@@ -1942,6 +1950,77 @@ public class Attributes implements Serializable {
         return true;
     }
 
+    public boolean addWithoutBulkData(Attributes other, BulkDataDescriptor descriptor) {
+        return addWithoutBulkData(other, descriptor, new ArrayList<ItemPointer>());
+    }
+
+    private boolean addWithoutBulkData(Attributes other, BulkDataDescriptor descriptor,
+                                       List<ItemPointer> itemPointer) {
+        final boolean toggleEndian = bigEndian != other.bigEndian;
+        final int[] tags = other.tags;
+        final VR[] srcVRs = other.vrs;
+        final Object[] srcValues = other.values;
+        final int otherSize = other.size;
+        int numAdd = 0;
+        String privateCreator = null;
+        int creatorTag = 0;
+        for (int i = 0; i < otherSize; i++) {
+            int tag = tags[i];
+            VR vr = srcVRs[i];
+            Object value = srcValues[i];
+            if (TagUtils.isPrivateCreator(tag)) {
+                if (contains(tag))
+                    continue; // do not overwrite private creator IDs
+
+                if (vr == VR.LO) {
+                    value = other.decodeStringValue(i);
+                    if ((value instanceof String)
+                            && creatorTagOf((String) value, tag, false) != -1)
+                        continue; // do not add duplicate private creator ID
+                }
+            }
+            if (TagUtils.isPrivateTag(tag)) {
+                int tmp = TagUtils.creatorTagOf(tag);
+                if (creatorTag != tmp) {
+                    creatorTag = tmp;
+                    privateCreator = other.privateCreatorOf(tag);
+                }
+            } else {
+                creatorTag = 0;
+                privateCreator = null;
+            }
+            int vallen = (value instanceof byte[])
+                    ? ((byte[])value).length
+                    : -1;
+            if (descriptor.isBulkData(itemPointer, privateCreator, tag, vr, vallen))
+                continue;
+
+            if (value instanceof Sequence) {
+                Sequence src = (Sequence) value;
+                setWithoutBulkData(privateCreator, tag, src, descriptor, itemPointer);
+            } else if (value instanceof Fragments) {
+                set(privateCreator, tag, (Fragments) value);
+            } else {
+                set(privateCreator, tag, vr,
+                        toggleEndian(vr, value, toggleEndian));
+            }
+            numAdd++;
+        }
+        return numAdd != 0;
+    }
+
+    private void setWithoutBulkData(String privateCreator, int tag, Sequence seq,
+                                    BulkDataDescriptor descriptor, List<ItemPointer> itemPointer) {
+        Sequence newSequence = newSequence(privateCreator, tag, seq.size());
+        for (Attributes item : seq) {
+            itemPointer.add(new ItemPointer(tag, privateCreator, newSequence.size()));
+            Attributes newItem = new Attributes(bigEndian, item.size());
+            newItem.addWithoutBulkData(item, descriptor, itemPointer);
+            newSequence.add(newItem);
+            itemPointer.remove(itemPointer.size()-1);
+        }
+    }
+
     /**
      * Add selected attributes from another Attributes object to this.
      * The specified array of tag values must be sorted (as by the
@@ -2219,10 +2298,8 @@ public class Attributes implements Serializable {
                     else
                         inAnotInB.set(tags[indexOfTag],vrs[indexOfTag],values[indexOfTag]);
                 }
-                System.out.println((String)values[indexOfTag]+indexOfTag);
             }
             else {
-                System.out.println((String)values[indexOfTag]+indexOfTag);
                 diffAttr(b, otherValues, inAnotInB, indexOfTag);
             }
         }

@@ -44,18 +44,19 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.Properties;
 
-import org.dcm4che.test.annotations.MppsParameters;
-import org.dcm4che.test.annotations.QueryParameters;
-import org.dcm4che.test.annotations.RemoteConnectionParameters;
-import org.dcm4che.test.annotations.StoreParameters;
-import org.dcm4che.test.annotations.TestConfig;
+import org.dcm4che.test.annotations.*;
 import org.dcm4che3.conf.api.ConfigurationException;
 import org.dcm4che3.conf.api.DicomConfiguration;
 import org.dcm4che3.conf.dicom.DicomConfigurationBuilder;
+import org.dcm4che3.net.Connection;
 import org.dcm4che3.net.Device; 
 import org.dcm4che3.tool.common.test.TestTool;
+import org.dcm4che3.tool.dcmgen.test.DcmGenTool;
 import org.dcm4che3.tool.findscu.test.QueryTool;
+import org.dcm4che3.tool.getscu.test.RetrieveTool;
+import org.dcm4che3.tool.movescu.test.MoveTool;
 import org.dcm4che3.tool.mppsscu.test.MppsTool;
+import org.dcm4che3.tool.stgcmtscu.test.StgCmtTool;
 import org.dcm4che3.tool.storescu.test.StoreTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,7 +78,8 @@ public class TestToolFactory {
         QidoTool,
         WadoURITool,
         WadoRSTool,
-        DCMQRSCPTool
+        DCMQRSCPTool,
+        DcmGenTool
     }
     private static DicomConfiguration config;
     
@@ -85,15 +87,13 @@ public class TestToolFactory {
         TestTool tool = null;
         
         //Load default parameters
-         Properties defaultParams = BasicTest.getDefaultProperties();
-         
+         Properties defaultParams = test.getDefaultProperties();
         //Load config file if parametrized else load default config
         File file = null;
         if(test.getParams().get("configfile")!=null) {
                 file = new File(((TestConfig)test.getParams().get("configfile")).configFile());
         }
         else {
-            System.out.println("Loading default parameters "+ defaultParams.toString());
             try {
                 file = new File("tmp");
                 
@@ -120,9 +120,13 @@ public class TestToolFactory {
                     Integer.valueOf(defaultParams.getProperty("remoteConn.port"))
                     :Integer.valueOf(remoteParams.port());
             //create tool
-                    String aeTitle=null,sourceDevice=null, sourceAETitle=null;
+                    String aeTitle=null, sourceDevice=null, sourceAETitle=null, destAEtitle=null, retrieveLevel=null;
                     Device device = null;
+                    Connection conn = null;
                     File baseDir = null;
+                    File retrieveDir = null;
+                    File stgCmtStorageDirectory = null;
+
         switch (type) {
         case StoreTool:
                 StoreParameters storeParams = (StoreParameters) test.getParams().get("StoreParameters");
@@ -134,13 +138,16 @@ public class TestToolFactory {
                 sourceAETitle = storeParams!=null?storeParams.sourceAETitle():"STORESCU";
 
                 try {
-                    device = getDicomConfiguration().findDevice(sourceDevice);    
+                    device = getDicomConfiguration().findDevice(sourceDevice);
+                    conn = device.connectionWithEqualsRDN(new Connection(
+                            (String) (storeParams != null && storeParams.connection() != null?
+                                    storeParams.connection():defaultParams.get("store.connection")), ""));
                 } catch (ConfigurationException e) {
                     // TODO Auto-generated catch block
                     e.printStackTrace();
-                } 
+                }
                 tool = new StoreTool(host,port,aeTitle,baseDir,
-                        device == null ? new Device(sourceDevice):device,sourceAETitle);
+                        device == null ? new Device(sourceDevice):device,sourceAETitle, conn);
             break;
 
         case FindTool:
@@ -151,12 +158,15 @@ public class TestToolFactory {
                 sourceAETitle = queryParams!=null?queryParams.sourceAETitle():"FINDSCU";
                 device = null;
                 try {
-                    device = getDicomConfiguration().findDevice(sourceDevice);    
+                    device = getDicomConfiguration().findDevice(sourceDevice);
+                    conn = device.connectionWithEqualsRDN(new Connection(
+                            (String) (queryParams != null && queryParams.connection() != null?
+                                    queryParams.connection():defaultParams.get("query.connection")), ""));
                 } catch (ConfigurationException e) {
                     // TODO Auto-generated catch block
                     e.printStackTrace();
-                } 
-                tool = new QueryTool(host, port, aeTitle, device, sourceAETitle);
+                }
+                tool = new QueryTool(host, port, aeTitle, device, sourceAETitle, conn);
             break;
         case MppsTool:
             MppsParameters mppsParams = (MppsParameters) test.getParams().get("MppsParameters");
@@ -168,18 +178,99 @@ public class TestToolFactory {
             sourceAETitle = mppsParams != null?mppsParams.sourceAETitle():"MPPSSCU";
             device = null;
             try {
-                device = getDicomConfiguration().findDevice(sourceDevice);    
+                device = getDicomConfiguration().findDevice(sourceDevice);
+                conn = device.connectionWithEqualsRDN(new Connection(
+                        (String) (mppsParams != null && mppsParams.connection() != null?
+                                mppsParams.connection():defaultParams.get("mpps.connection")), ""));
             } catch (ConfigurationException e) {
                 // TODO Auto-generated catch block
                 e.printStackTrace();
-            } 
-            tool = new MppsTool(host, port, aeTitle, baseDir, device, sourceAETitle);
+            }
+            tool = new MppsTool(host, port, aeTitle, baseDir, device, sourceAETitle, conn);
+            break;
+        case GetTool:
+            GetParameters getParams = (GetParameters) test.getParams().get("GetParameters");
+            aeTitle = getParams != null && getParams.aeTitle()!=null? getParams.aeTitle() 
+                    : defaultParams.getProperty("retrieve.aetitle");
+            retrieveLevel = getParams != null && getParams.retrieveLevel()!=null? getParams.retrieveLevel()
+                    : defaultParams.getProperty("retrieve.level");
+            retrieveDir = getParams != null && getParams.retrieveDir()!=null? new File(getParams.retrieveDir())
+            :new File(defaultParams.getProperty("retrieve.directory"));
+            sourceDevice = getParams != null?getParams.sourceDevice():"getscu";
+            sourceAETitle = getParams != null?getParams.sourceAETitle():"GETSCU";
+            device = null;
+            try {
+                device = getDicomConfiguration().findDevice(sourceDevice);
+                conn = device.connectionWithEqualsRDN(new Connection(
+                        (String) (getParams != null && getParams.connection() != null?
+                                getParams.connection():defaultParams.get("retrieve.connection")), ""));
+            } catch (ConfigurationException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+            tool = new RetrieveTool(host, port, aeTitle, retrieveDir, device, sourceAETitle, retrieveLevel, conn);
+            break;
+        case DcmGenTool:
+            DcmGenParameters genParams = (DcmGenParameters) test.getParams().get("DcmGenParameters");
+            File seedFile = new File(genParams.seedFile());
+            File outputDir = new File(genParams.outputDir());
+            int instanceCnt = genParams.instanceCount();
+            int seriesCnt = genParams.seriesCount();
+            tool = new DcmGenTool(instanceCnt, seriesCnt, outputDir, seedFile);
+            break;
+        case StorageCommitmentTool:
+            StgCmtParameters stgcmtParams = (StgCmtParameters) test.getParams().get("StgCmtParameters");
+            aeTitle = stgcmtParams != null && stgcmtParams.aeTitle() != null? stgcmtParams.aeTitle()
+                    :defaultParams.getProperty("stgcmt.aetitle");
+            baseDir = stgcmtParams != null && stgcmtParams.baseDirectory()!=null? new File(stgcmtParams.baseDirectory())
+                    :new File(defaultParams.getProperty("stgcmt.directory"));
+            stgCmtStorageDirectory =  stgcmtParams != null && stgcmtParams.storageDirectory()!=null?
+                    new File(stgcmtParams.storageDirectory())
+                    :new File(defaultParams.getProperty("stgcmt.storedirectory"));
+            sourceDevice = stgcmtParams != null? stgcmtParams.sourceDevice():"stgcmtscu";
+            sourceAETitle = stgcmtParams != null? stgcmtParams.sourceAETitle():"STGCMTSCU";
+            device = null;
+            try {
+                device = getDicomConfiguration().findDevice(sourceDevice);
+                conn = device.connectionWithEqualsRDN(new Connection(
+                        (String) (stgcmtParams != null && stgcmtParams.connection() != null?
+                                stgcmtParams.connection():defaultParams.get("stgcmt.connection")), ""));
+            } catch (ConfigurationException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+            
+            tool = new StgCmtTool(host,port,aeTitle,baseDir,stgCmtStorageDirectory,device,sourceAETitle, conn);
+            break;
+        case MoveTool:
+            MoveParameters moveParams = (MoveParameters) test.getParams().get("MoveParameters");
+            aeTitle = moveParams != null && moveParams.aeTitle() != null? moveParams.aeTitle()
+                    :defaultParams.getProperty("move.aetitle");
+            destAEtitle = moveParams !=null && moveParams.destAEtitle() !=null? moveParams.destAEtitle()
+                    :defaultParams.getProperty("move.destaetitle");
+            retrieveLevel = moveParams != null && moveParams.retrieveLevel()!=null? moveParams.retrieveLevel()
+                    : defaultParams.getProperty("move.level");
+            sourceDevice = moveParams != null? moveParams.sourceDevice():"movescu";
+            sourceAETitle = moveParams != null? moveParams.sourceAETitle():"MOVESCU";
+            device = null;
+            try {
+                device = getDicomConfiguration().findDevice(sourceDevice);
+                conn = device.connectionWithEqualsRDN(new Connection(
+                        (String) (moveParams != null && moveParams.connection() != null?
+                                moveParams.connection():defaultParams.get("move.connection")), ""));
+            } catch (ConfigurationException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+            tool = new MoveTool(host, port, aeTitle, destAEtitle, retrieveLevel, device, sourceAETitle, conn);
             break;
         default:
             break;
         }
         return tool;
     }
+
+    
     
     public static DicomConfiguration getDicomConfiguration() {
         return config;

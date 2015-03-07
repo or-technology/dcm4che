@@ -198,7 +198,11 @@ public class ImageWriterFactory implements Serializable {
     private static volatile ImageWriterFactory defaultFactory;
 
     @LDAP(distinguishingField = "dicomTransferSyntax", noContainerNode = true)
-    @ConfigurableProperty(name = "dicomImageWriterMap", label = "Image Writers", description = "Image writers by transfer syntaxes")
+    @ConfigurableProperty(
+        name="dicomImageWriterMap",
+        label = "Image Writers",
+        description = "Image writers by transfer syntaxes"
+    )
     private Map<String, List<ImageWriterParam>> map = new LinkedHashMap<String, List<ImageWriterParam>>();
 
     private static String nullify(String s) {

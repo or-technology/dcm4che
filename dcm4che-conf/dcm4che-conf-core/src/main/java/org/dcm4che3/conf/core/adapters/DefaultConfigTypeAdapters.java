@@ -43,6 +43,7 @@ import org.dcm4che3.conf.api.ConfigurationException;
 import org.dcm4che3.conf.api.ConfigurationUnserializableException;
 import org.dcm4che3.conf.core.AnnotatedConfigurableProperty;
 import org.dcm4che3.conf.core.BeanVitalizer;
+import org.dcm4che3.conf.core.api.ConfigurableClass;
 import org.dcm4che3.conf.core.api.ConfigurableProperty;
 import org.dcm4che3.conf.core.validation.ValidationException;
 
@@ -261,11 +262,23 @@ public class DefaultConfigTypeAdapters {
         public Map<String, Object> getSchema(AnnotatedConfigurableProperty property, BeanVitalizer vitalizer) throws ConfigurationException {
             try {
                 Map<String, Object> metadata = new HashMap<String, Object>();
-                metadata.put("type", "enum");
+
+                // if there is no default, then this enum supports null
+                if (property.getAnnotation(ConfigurableProperty.class).defaultValue().equals(ConfigurableProperty.NO_DEFAULT_VALUE)) {
+                    ArrayList<String> types = new ArrayList<String>();
+                    types.add("enum");
+                    types.add("null");
+                    metadata.put("type", types);
+                } else
+                    metadata.put("type", "enum");
+
+
+
                 metadata.put("class", property.getRawClass().getSimpleName());
 
                 ConfigurableProperty.EnumRepresentation howToRepresent = getEnumRepresentation(property);
                 List<String> enumStringValues = new ArrayList<String>();
+
                 for (Enum anEnum : getEnumValues(property)) enumStringValues.add(anEnum.toString());
 
                 if (howToRepresent.equals(ConfigurableProperty.EnumRepresentation.STRING)) {
@@ -273,6 +286,7 @@ public class DefaultConfigTypeAdapters {
                 } else if (howToRepresent.equals(ConfigurableProperty.EnumRepresentation.ORDINAL)) {
                     // for ordinal representation - create array of ints with appropriate length, and add a clarifying array with names
                     List<Integer> vals = new ArrayList<Integer>();
+
                     for (int i = 0; i<getEnumValues(property).length;i++) vals.add(i);
                     metadata.put("enum", vals);
                     metadata.put("enumStrValues", enumStringValues);
@@ -288,8 +302,8 @@ public class DefaultConfigTypeAdapters {
 
         @Override
         public Object normalize(Object configNode, AnnotatedConfigurableProperty property, BeanVitalizer vitalizer) throws ConfigurationException {
-            //TODO: validate ?
-            if (configNode == null) return null;//throw new ConfigurationException("null not allowed for enum");
+
+            if (configNode == null) return null;
             switch (property.getAnnotation(ConfigurableProperty.class).enumRepresentation()) {
                 case ORDINAL:
                     try {
@@ -335,7 +349,7 @@ public class DefaultConfigTypeAdapters {
 
         defaultTypeAdapters.put(Map.class, new NullToNullDecorator(new MapTypeAdapter()));
         defaultTypeAdapters.put(Set.class, new NullToNullDecorator(new CollectionTypeAdapter<Set>(LinkedHashSet.class)));
-        defaultTypeAdapters.put(EnumSet.class, new NullToNullDecorator(new CollectionTypeAdapter<Set>(HashSet.class)));
+        defaultTypeAdapters.put(EnumSet.class, new NullToNullDecorator(new CollectionTypeAdapter<Set>(LinkedHashSet.class)));
         defaultTypeAdapters.put(List.class, new NullToNullDecorator(new CollectionTypeAdapter<List>(ArrayList.class)));
         defaultTypeAdapters.put(Collection.class, new NullToNullDecorator(new CollectionTypeAdapter<List>(ArrayList.class)));
         defaultTypeAdapters.put(Enum.class, new NullToNullDecorator(new EnumTypeAdapter()));

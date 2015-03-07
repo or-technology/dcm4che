@@ -41,6 +41,7 @@ package org.dcm4che3.conf.core.normalization;
 
 import org.dcm4che3.conf.api.ConfigurationException;
 import org.dcm4che3.conf.core.AnnotatedConfigurableProperty;
+import org.dcm4che3.conf.core.BeanVitalizer;
 import org.dcm4che3.conf.core.Configuration;
 import org.dcm4che3.conf.core.api.ConfigurableProperty;
 import org.dcm4che3.conf.core.DelegatingConfiguration;
@@ -51,11 +52,12 @@ import java.util.*;
 /**
  *
  */
-public class DefaultsFilterDecorator extends DelegatingConfiguration {
+public class DefaultsAndNullFilterDecorator extends DelegatingConfiguration {
 
     private boolean persistDefaults;
+    private BeanVitalizer dummyVitalizer = new BeanVitalizer();
 
-    public DefaultsFilterDecorator(Configuration delegate, boolean persistDefaults) {
+    public DefaultsAndNullFilterDecorator(Configuration delegate, boolean persistDefaults) {
         super(delegate);
         this.persistDefaults = persistDefaults;
     }
@@ -68,7 +70,8 @@ public class DefaultsFilterDecorator extends DelegatingConfiguration {
             public boolean applyFilter(Map<String, Object> containerNode, AnnotatedConfigurableProperty property) throws ConfigurationException {
 
                 // if the value for a property equals to default, filter it out
-                if (property.getAnnotation(ConfigurableProperty.class).defaultValue().equals(String.valueOf(containerNode.get(property.getAnnotatedName())))) {
+                if (property.getAnnotation(ConfigurableProperty.class).defaultValue().equals(String.valueOf(containerNode.get(property.getAnnotatedName())))
+                        || containerNode.get(property.getAnnotatedName()) == null) {
                     containerNode.remove(property.getAnnotatedName());
                     return true;
                 }
@@ -94,8 +97,12 @@ public class DefaultsFilterDecorator extends DelegatingConfiguration {
                 // if no value for this property, see if there is default and set it
                 if (!containerNode.containsKey(property.getAnnotatedName())) {
                     String defaultValue = property.getAnnotation(ConfigurableProperty.class).defaultValue();
-                    if (!defaultValue.equals(ConfigurableProperty.NO_DEFAULT_VALUE))
-                        containerNode.put(property.getAnnotatedName(), defaultValue);
+                    if (!defaultValue.equals(ConfigurableProperty.NO_DEFAULT_VALUE)) {
+                        Object normalized = dummyVitalizer.lookupDefaultTypeAdapter(property.getRawClass()).normalize(defaultValue, property, dummyVitalizer);
+                        containerNode.put(property.getAnnotatedName(), normalized);
+                    } else {
+                        containerNode.put(property.getAnnotatedName(), null);
+                    }
 
                     return true;
                 }

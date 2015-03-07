@@ -462,7 +462,18 @@ public class JSONReader {
     }
 
     private Object readDataFragment(boolean bigEndian) {
-        if (next() != Event.KEY_NAME) {
+        Event event = next();
+        switch (event) {
+        case KEY_NAME:
+            break;
+        case END_OBJECT:
+            return null;
+            default: throw new JsonParsingException("Unexpected " + event
+                    + ", expected \"InlineBinary\""
+                    + " or \"BulkDataURI\"", location);
+        }
+        
+        if (event != Event.KEY_NAME) {
             throw new JsonParsingException("Unexpected " + event
                     + ", expected \"InlineBinary\""
                     + " or \"BulkDataURI\"", location);

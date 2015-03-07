@@ -38,6 +38,7 @@
 package org.dcm4che.test.common;
 
 
+import java.io.File;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.security.GeneralSecurityException;
@@ -45,11 +46,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
+import org.dcm4che.test.annotations.TestParamDefaults;
 import org.dcm4che.test.common.TestToolFactory.TestToolType;
 import org.dcm4che.test.utils.LoadProperties;
 import org.dcm4che3.data.Attributes;
 import org.dcm4che3.net.IncompatibleConnectionException;
 import org.dcm4che3.tool.common.test.TestResult;
+import org.dcm4che3.tool.dcmgen.test.DcmGenResult;
+import org.dcm4che3.tool.dcmgen.test.DcmGenTool;
 import org.dcm4che3.tool.findscu.test.QueryTool;
 import org.dcm4che3.tool.mppsscu.test.MppsTool;
 import org.dcm4che3.tool.storescu.test.StoreTool;
@@ -64,7 +68,7 @@ public abstract class BasicTest {
     @Rule
     public TestParametersRule rule = new TestParametersRule(this);
 
-    private static Properties defaultProperties;
+    private Properties defaultProperties;
 
     private static Map<String, Annotation> params = new HashMap<String, Annotation>();
 
@@ -72,20 +76,26 @@ public abstract class BasicTest {
         return params;
     }
 
-    public static void setDefaultProperties(Properties props) {
+    public void setDefaultProperties(Properties props) {
         defaultProperties = props;
     }
-    public static Properties getDefaultProperties() {
+    public Properties getDefaultProperties() {
         return defaultProperties;
     }
     protected void addParam( String key, Annotation anno) {
         params.put(key, anno);
     }
-    
+    protected void clearParams() {
+        params.clear();
+    }
     public void init(Class<? extends BasicTest> clazz){
         try {
-            setDefaultProperties(LoadProperties.load(clazz.getClass()));
-            System.out.println("Loaded default properties file successfully "+ clazz.getClass().getName());
+            if(this.getParams().containsKey("defaultParams") 
+                    && this.getParams().get("defaultParams") != null)
+                System.setProperty("defaultParams", ((TestParamDefaults)
+                        this.getParams().get("defaultParams")).propertiesFile());
+            
+            this.setDefaultProperties(LoadProperties.load(clazz.getClass()));
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -111,10 +121,30 @@ public abstract class BasicTest {
         return storeTool.getResult();
     }
     
+    public TestResult storeResource(String description, String fileName) {
+        StoreTool storeTool = (StoreTool) TestToolFactory.createToolForTest(TestToolType.StoreTool, this);
+        File f = new File(fileName);
+        storeTool.setbaseDir(f.getParent()==null?"target/test-classes/":f.getParent());
+        try {
+            storeTool.store(description, fileName);
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (InterruptedException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (IncompatibleConnectionException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (GeneralSecurityException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+        return storeTool.getResult();
+    }   
     public TestResult query(String description, Attributes keys, boolean fuzzy) {
         QueryTool queryTool = (QueryTool) TestToolFactory.createToolForTest(TestToolType.FindTool, this);
         queryTool.addAll(keys);
-        
             try {
                 if(fuzzy)
                     queryTool.queryfuzzy(description);
@@ -154,5 +184,39 @@ public abstract class BasicTest {
             e.printStackTrace();
         }
         return mppsTool.getResult();
+    }
+
+    public TestResult storeResources(String description, DcmGenResult result) {
+        StoreTool storeTool = (StoreTool) TestToolFactory.createToolForTest(TestToolType.StoreTool, this);
+        
+        try {
+            for(String fileName : result.getGeneratedResults()) {
+                File f = new File(fileName);
+                storeTool.setbaseDir(f.getParent()==null?"target/test-classes/":f.getParent());
+                storeTool.store(description, fileName);
+            }
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (InterruptedException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (IncompatibleConnectionException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (GeneralSecurityException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+        return storeTool.getResult();
+    }
+
+    public TestResult generateAndSend(String description, Attributes overrideAttributes) {
+        DcmGenTool dcmGenTool = (DcmGenTool) TestToolFactory.createToolForTest(TestToolType.DcmGenTool, this);
+        TestResult storeResult;
+        dcmGenTool.generateFiles(description, overrideAttributes);
+        DcmGenResult result = (DcmGenResult) dcmGenTool.getResult();
+        storeResult = storeResources(description, result);
+        return storeResult;
     }
 }

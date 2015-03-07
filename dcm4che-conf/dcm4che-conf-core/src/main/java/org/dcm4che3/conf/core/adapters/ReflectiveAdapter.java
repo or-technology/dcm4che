@@ -50,6 +50,7 @@ import org.dcm4che3.conf.core.util.ConfigIterators;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Reflective adapter that handles classes with ConfigurableClass annotations.<br/>
@@ -130,7 +131,7 @@ public class ReflectiveAdapter<T> implements ConfigTypeAdapter<T, Map<String, Ob
 
         Class<T> clazz = (Class<T>) object.getClass();
 
-        Map<String, Object> configNode = new HashMap<String, Object>();
+        Map<String, Object> configNode = new TreeMap<String, Object>();
 
         // get data from all the configurable fields
         for (AnnotatedConfigurableProperty fieldProperty : ConfigIterators.getAllConfigurableFields(clazz)) {
@@ -172,6 +173,7 @@ public class ReflectiveAdapter<T> implements ConfigTypeAdapter<T, Map<String, Ob
 
             ConfigurableProperty propertyAnnotation = configurableChildProperty.getAnnotation(ConfigurableProperty.class);
 
+            ConfigTypeAdapter childAdapter = vitalizer.lookupTypeAdapter(configurableChildProperty);
             Map<String, Object> childPropertyMetadata = new LinkedHashMap<String, Object>();
             classMetaData.put(configurableChildProperty.getAnnotatedName(), childPropertyMetadata);
 
@@ -180,10 +182,12 @@ public class ReflectiveAdapter<T> implements ConfigTypeAdapter<T, Map<String, Ob
 
             if (!propertyAnnotation.description().equals(""))
                 childPropertyMetadata.put("description", propertyAnnotation.description());
-
-            if (!propertyAnnotation.defaultValue().equals(ConfigurableProperty.NO_DEFAULT_VALUE))
-                childPropertyMetadata.put("default", propertyAnnotation.defaultValue());
-
+            try {
+                if (!propertyAnnotation.defaultValue().equals(ConfigurableProperty.NO_DEFAULT_VALUE))
+                    childPropertyMetadata.put("default", childAdapter.normalize(propertyAnnotation.defaultValue(), configurableChildProperty, vitalizer));
+            } catch (ClassCastException e) {
+                childPropertyMetadata.put("default", 0);
+            }
             if (!configurableChildProperty.getTags().isEmpty())
                 childPropertyMetadata.put("tags", configurableChildProperty.getTags());
 
@@ -193,8 +197,7 @@ public class ReflectiveAdapter<T> implements ConfigTypeAdapter<T, Map<String, Ob
             childPropertyMetadata.put("uiGroup",propertyAnnotation.group());
 
             // also merge in the metadata from this child itself
-            ConfigTypeAdapter adapter = vitalizer.lookupTypeAdapter(configurableChildProperty);
-            Map<String, Object> childMetaData = adapter.getSchema(configurableChildProperty, vitalizer);
+            Map<String, Object> childMetaData = childAdapter.getSchema(configurableChildProperty, vitalizer);
             if (childMetaData != null) childPropertyMetadata.putAll(childMetaData);
         }
 

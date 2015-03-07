@@ -53,5 +53,7 @@ public @interface QueryParameters {
 
     public String sourceDevice() default "findscu";
 
-    public String sourceAETitle() default "FINDSCU"; 
+    public String sourceAETitle() default "FINDSCU";
+
+    public String connection() default "dicom";
 }
