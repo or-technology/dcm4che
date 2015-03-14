@@ -250,6 +250,8 @@ public class ImageWriterFactory implements Serializable {
     public void load(InputStream stream) throws IOException {
         XMLStreamReader xmler = null;
         try {
+            String sys = ImageReaderFactory.getNativeSystemSpecification();
+            
             XMLInputFactory xmlif = XMLInputFactory.newInstance();
             xmler = xmlif.createXMLStreamReader(stream);
 
@@ -275,14 +277,20 @@ public class ImageWriterFactory implements Serializable {
                                                     case XMLStreamConstants.START_ELEMENT:
                                                         key = xmler.getName().getLocalPart();
                                                         if ("writer".equals(key)) {
-                                                            ImageWriterParam param =
-                                                                new ImageWriterParam(xmler.getAttributeValue(null,
-                                                                    "format"), xmler.getAttributeValue(null, "class"),
-                                                                    xmler.getAttributeValue(null, "patchJPEGLS"),
-                                                                    StringUtils.split(
+                                                            String s = xmler.getAttributeValue(null, "sys");
+                                                            String[] systems = s == null ? null : s.split(",");
+                                                            if (systems == null
+                                                                || (sys != null && Arrays.binarySearch(systems, sys) >= 0)) {
+                                                                // Only add readers that can run on the current system
+                                                                ImageWriterParam param =
+                                                                    new ImageWriterParam(xmler.getAttributeValue(null,
+                                                                        "format"), xmler.getAttributeValue(null,
+                                                                        "class"), xmler.getAttributeValue(null,
+                                                                        "patchJPEGLS"), StringUtils.split(
                                                                         xmler.getAttributeValue(null, "params"), ';'),
-                                                                    xmler.getAttributeValue(null, "name"));
-                                                            put(tsuid, param);
+                                                                        xmler.getAttributeValue(null, "name"));
+                                                                put(tsuid, param);
+                                                            }
                                                         }
                                                         break;
                                                     case XMLStreamConstants.END_ELEMENT:

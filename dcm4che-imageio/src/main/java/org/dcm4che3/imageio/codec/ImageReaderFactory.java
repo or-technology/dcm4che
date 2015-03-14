@@ -44,6 +44,7 @@ import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -214,6 +215,8 @@ public class ImageReaderFactory implements Serializable {
     public void load(InputStream stream) throws IOException {
         XMLStreamReader xmler = null;
         try {
+            String sys = getNativeSystemSpecification();
+
             XMLInputFactory xmlif = XMLInputFactory.newInstance();
             xmler = xmlif.createXMLStreamReader(stream);
 
@@ -239,12 +242,19 @@ public class ImageReaderFactory implements Serializable {
                                                     case XMLStreamConstants.START_ELEMENT:
                                                         key = xmler.getName().getLocalPart();
                                                         if ("reader".equals(key)) {
-                                                            ImageReaderParam param =
-                                                                new ImageReaderParam(xmler.getAttributeValue(null,
-                                                                    "format"), xmler.getAttributeValue(null, "class"),
-                                                                    xmler.getAttributeValue(null, "patchJPEGLS"),
-                                                                    xmler.getAttributeValue(null, "name"));
-                                                            put(tsuid, param);
+                                                            String s = xmler.getAttributeValue(null, "sys");
+                                                            String[] systems = s == null ? null : s.split(",");
+                                                            if (systems == null || (sys != null
+                                                                && Arrays.binarySearch(systems, sys) >= 0)) {
+                                                                // Only add readers that can run on the current system
+                                                                ImageReaderParam param =
+                                                                    new ImageReaderParam(xmler.getAttributeValue(null,
+                                                                        "format"), xmler.getAttributeValue(null,
+                                                                        "class"), xmler.getAttributeValue(null,
+                                                                        "patchJPEGLS"), xmler.getAttributeValue(null,
+                                                                        "name"));
+                                                                put(tsuid, param);
+                                                            }
                                                         }
                                                         break;
                                                     case XMLStreamConstants.END_ELEMENT:
@@ -348,6 +358,54 @@ public class ImageReaderFactory implements Serializable {
             }
         }
         return null;
-    }    
-    
+    }
+
+    public static String getNativeSystemSpecification() {
+        String val = System.getProperty("native.library.spec");
+
+        if (val == null) {
+            // Follows the OSGI specification to use Bundle-NativeCode in the bundle fragment :
+            // http://www.osgi.org/Specifications/Reference
+            String osName = System.getProperty("os.name"); //$NON-NLS-1$
+            String osArch = System.getProperty("os.arch"); //$NON-NLS-1$
+            if (osName != null && !osName.trim().equals("") && osArch != null && !osArch.trim().equals("")) { //$NON-NLS-1$ //$NON-NLS-2$
+                if (osName.toLowerCase().startsWith("win")) { //$NON-NLS-1$
+                    // All Windows versions with a specific processor architecture (x86 or x86-64) are grouped under
+                    // windows. If you need to make different native libraries for the Windows versions, define it in
+                    // the Bundle-NativeCode tag of the bundle fragment.
+                    osName = "windows"; //$NON-NLS-1$
+                } else if (osName.equals("Mac OS X")) { //$NON-NLS-1$
+                    osName = "macosx"; //$NON-NLS-1$
+                } else if (osName.equals("SymbianOS")) { //$NON-NLS-1$
+                    osName = "epoc32"; //$NON-NLS-1$
+                } else if (osName.equals("hp-ux")) { //$NON-NLS-1$
+                    osName = "hpux"; //$NON-NLS-1$
+                } else if (osName.equals("Mac OS")) { //$NON-NLS-1$
+                    osName = "macos"; //$NON-NLS-1$
+                } else if (osName.equals("OS/2")) { //$NON-NLS-1$
+                    osName = "os2"; //$NON-NLS-1$
+                } else if (osName.equals("procnto")) { //$NON-NLS-1$
+                    osName = "qnx"; //$NON-NLS-1$
+                } else {
+                    osName = osName.toLowerCase();
+                }
+
+                if (osArch.equals("pentium") || osArch.equals("i386") || osArch.equals("i486") || osArch.equals("i586") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
+                    || osArch.equals("i686")) { //$NON-NLS-1$
+                    osArch = "x86"; //$NON-NLS-1$
+                } else if (osArch.equals("amd64") || osArch.equals("em64t") || osArch.equals("x86_64")) { //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
+                    osArch = "x86-64"; //$NON-NLS-1$
+                } else if (osArch.equals("power ppc")) { //$NON-NLS-1$
+                    osArch = "powerpc"; //$NON-NLS-1$
+                } else if (osArch.equals("psc1k")) { //$NON-NLS-1$
+                    osArch = "ignite"; //$NON-NLS-1$
+                } else {
+                    osArch = osArch.toLowerCase();
+                }
+                val = osName + "-" + osArch;
+                System.setProperty("native.library.spec", val); //$NON-NLS-1$ //$NON-NLS-2$
+            }
+        }
+        return val;
+    }
 }
