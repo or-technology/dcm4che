@@ -135,7 +135,7 @@ public class ImageReaderFactory implements Serializable {
             return patchJPEGLS;
         }
 
-        public String tosString() {
+        public String toString() {
             return name;
         }
     }
@@ -244,8 +244,8 @@ public class ImageReaderFactory implements Serializable {
                                                         if ("reader".equals(key)) {
                                                             String s = xmler.getAttributeValue(null, "sys");
                                                             String[] systems = s == null ? null : s.split(",");
-                                                            if (systems == null || (sys != null
-                                                                && Arrays.binarySearch(systems, sys) >= 0)) {
+                                                            if (systems == null
+                                                                || (sys != null && Arrays.asList(systems).contains(sys))) {
                                                                 // Only add readers that can run on the current system
                                                                 ImageReaderParam param =
                                                                     new ImageReaderParam(xmler.getAttributeValue(null,

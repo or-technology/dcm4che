@@ -48,6 +48,7 @@
 			sys="linux-x86,linux-x86-64,windows-x86,windows-x86-64,macosx-x86-64"
 			class="org.weasis.jpeg.NativeJLSImageReader" />
 		<reader format="jpeg" name="Sun native jpeg-ls decoder"
+			sys="linux-x86,linux-x86-64,windows-x86,solaris-x86,solaris-x86-64,solaris-sparc,solaris-sparcv9"
 			class="com.sun.media.imageioimpl.plugins.jpeg.CLibJPEGImageReader" />
 	</element>
 	<element tsuid="1.2.840.10008.1.2.4.90">
