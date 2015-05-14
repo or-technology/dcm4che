@@ -39,12 +39,12 @@
  */
 package org.dcm4che3.conf.ldap;
 
-import org.dcm4che3.conf.api.ConfigurationException;
-import org.dcm4che3.conf.core.AnnotatedConfigurableProperty;
+import org.dcm4che3.conf.core.api.ConfigurationException;
+import org.dcm4che3.conf.core.api.internal.AnnotatedConfigurableProperty;
 import org.dcm4che3.conf.core.api.ConfigurableClass;
 import org.dcm4che3.conf.core.api.ConfigurableProperty;
 import org.dcm4che3.conf.core.api.LDAP;
-import org.dcm4che3.conf.core.util.ConfigIterators;
+import org.dcm4che3.conf.core.api.internal.ConfigIterators;
 import org.dcm4che3.net.ApplicationEntity;
 import org.dcm4che3.net.Device;
 import org.dcm4che3.net.hl7.HL7Application;
@@ -109,7 +109,7 @@ public class LdapNode {
      *
      * @param configNode
      * @param configurableClass
-     * @throws org.dcm4che3.conf.api.ConfigurationException
+     * @throws org.dcm4che3.conf.core.api.ConfigurationException
      */
     public void populate(Map<String, Object> configNode, Class configurableClass) throws ConfigurationException {
 
@@ -135,7 +135,7 @@ public class LdapNode {
             if (Map.class.isAssignableFrom(property.getRawClass())) {
                 LdapNode thisParent = makeLdapCollectionNode(property);
                 for (Map.Entry<String, Object> entry : ((Map<String, Object>) propertyConfigNode).entrySet()) {
-                    LdapNode elementNode = thisParent.makeLdapElementNode(property, entry.getKey());
+                    LdapNode elementNode = thisParent.makeLdapElementNode(property, String.valueOf(entry.getKey()));
 
                     // now if it is a conf obj, not primitive or custom representation, go deeper
                     if (property.isMapOfConfObjects() && entry.getValue() instanceof Map) {
