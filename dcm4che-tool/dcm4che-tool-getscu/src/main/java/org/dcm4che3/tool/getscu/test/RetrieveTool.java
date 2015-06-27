@@ -45,12 +45,13 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URL;
+import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map.Entry;
 import java.util.Properties;
 import java.util.Set;
-import java.util.Map.Entry;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -78,7 +79,6 @@ import org.dcm4che3.tool.common.test.TestResult;
 import org.dcm4che3.tool.common.test.TestTool;
 import org.dcm4che3.tool.getscu.GetSCU;
 import org.dcm4che3.tool.getscu.GetSCU.InformationModel;
-import org.dcm4che3.util.StreamUtils;
 import org.dcm4che3.util.StringUtils;
 
 /**
@@ -87,24 +87,24 @@ import org.dcm4che3.util.StringUtils;
  */
 public class RetrieveTool implements TestTool{
 
-    private String host;
-    private int port;
-    private String aeTitle;
-    private Device device;
-    private Connection conn;
-    private String sourceAETitle;
-    private File retrieveDir;
+    private final String host;
+    private final int port;
+    private final String aeTitle;
+    private final Device device;
+    private final Connection conn;
+    private final String sourceAETitle;
+    private final File retrieveDir;
     private int numCStores;
     private int numSuccess;
     private int numFailed;
     private int expectedMatches = Integer.MIN_VALUE;
-    private Attributes retrieveatts = new Attributes();
+    private final Attributes retrieveatts = new Attributes();
     
-    private List<Attributes> response = new ArrayList<Attributes>();
+    private final List<Attributes> response = new ArrayList<Attributes>();
     private TestResult result;
-    private String retrieveLevel;
-    private InformationModel retrieveInformationModel;
-    private boolean relational;
+    private final String retrieveLevel;
+    private final InformationModel retrieveInformationModel;
+    private final boolean relational;
     
     private static String[] IVR_LE_FIRST = { UID.ImplicitVRLittleEndian,
             UID.ExplicitVRLittleEndian, UID.ExplicitVRBigEndianRetired };
@@ -163,7 +163,7 @@ public class RetrieveTool implements TestTool{
         // open, send and wait for response
         try {
             retrievescu.open();
-            retrievescu.retrieve(getDimseRSPHandler(retrievescu.getAssociation().nextMessageID()));
+            retrievescu.retrieve(new DimseRSPHandler(retrievescu.getAssociation().nextMessageID()));
         } finally {
             retrievescu.close();
             executorService.shutdown();
@@ -185,9 +185,9 @@ public class RetrieveTool implements TestTool{
                 (timeEnd - timeStart), response));
     }
 
-    public void addTag(int tag, String value) throws Exception {
+	public void addTag(int tag, String... values) throws Exception {
         VR vr = ElementDictionary.vrOf(tag, null); 
-        retrieveatts.setString(tag, vr, value);
+		retrieveatts.setString(tag, vr, values);
     }
 
     public void clearTags() {
@@ -196,20 +196,6 @@ public class RetrieveTool implements TestTool{
 
     public void setExpectedMatches(int expectedResult) {
         this.expectedMatches = expectedResult;
-    }
-    
-    private DimseRSPHandler getDimseRSPHandler(int messageID) {
-
-        DimseRSPHandler rspHandler = new DimseRSPHandler(messageID) {
-
-            @Override
-            public void onDimseRSP(Association as, Attributes cmd,
-                    Attributes data) {
-                super.onDimseRSP(as, cmd, data);
-            }
-        };
-
-        return rspHandler;
     }
 
     private void registerSCPservice(Device device, final File storeDir) {
@@ -289,6 +275,10 @@ public class RetrieveTool implements TestTool{
     @Override
     public TestResult getResult() {
         return this.result;
+    }
+
+    public Path getRetrieveDir() {
+        return retrieveDir.toPath();
     }
 
 }

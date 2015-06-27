@@ -42,7 +42,7 @@
   <parent>
     <artifactId>dcm4che-parent</artifactId>
     <groupId>org.dcm4che</groupId>
-    <version>3.3.7-SNAPSHOT</version>
+    <version>3.3.8-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>dcm4che-assembly</artifactId>
@@ -89,7 +89,7 @@
                 <include>uids.xml</include>
               </includes>
               <stylesheet>src/main/xsl/sampleTCFile.xsl</stylesheet>
-              <outputDir>src/etc/probetc</outputDir>
+              <outputDir>${project.build.directory}/etc/probetc</outputDir>
               <fileMappers>
                 <fileMapper implementation="org.codehaus.plexus.components.io.filemappers.MergeFileMapper">
                   <targetName>sampleTCFile.properties</targetName>
@@ -133,6 +133,11 @@
     <dependency>
       <groupId>org.dcm4che</groupId>
       <artifactId>dcm4che-conf-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.dcm4che</groupId>
+      <artifactId>dcm4che-conf-dicom</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>

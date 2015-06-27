@@ -122,12 +122,17 @@ public class SingleJsonFileConfigurationStorage implements Configuration {
     public void removeNode(String path) throws ConfigurationException {
 
         Map<String, Object> configurationRoot = getConfigurationRoot();
-        ConfigNodeUtil.removeNode(configurationRoot, path);
+        ConfigNodeUtil.removeNodes(configurationRoot, path);
         persistNode("/", configurationRoot, null);
     }
 
     @Override
     public Iterator search(String liteXPathExpression) throws IllegalArgumentException, ConfigurationException {
         return ConfigNodeUtil.search(getConfigurationRoot(), liteXPathExpression);
+    }
+
+    @Override
+    public void lock() {
+        // ostrich
     }
 }

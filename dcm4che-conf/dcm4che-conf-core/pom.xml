@@ -45,7 +45,7 @@
     <parent>
         <artifactId>dcm4che-conf</artifactId>
         <groupId>org.dcm4che</groupId>
-        <version>3.3.7-SNAPSHOT</version>
+        <version>3.3.8-SNAPSHOT</version>
     </parent>
     <artifactId>dcm4che-conf-core</artifactId>
     <name>dcm4che-conf-core</name>
@@ -58,24 +58,10 @@
         </dependency>
         <dependency>
             <groupId>org.dcm4che</groupId>
-            <artifactId>dcm4che-net</artifactId>
+            <artifactId>dcm4che-core</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <dependency>
-            <groupId>org.dcm4che</groupId>
-            <artifactId>dcm4che-conf-api</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.dcm4che</groupId>
-            <artifactId>dcm4che-audit</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.dcm4che</groupId>
-            <artifactId>dcm4che-conf-api-hl7</artifactId>
-            <version>${project.version}</version>
-        </dependency>
+
         <dependency>
             <groupId>commons-beanutils</groupId>
             <artifactId>commons-beanutils</artifactId>
@@ -105,8 +91,18 @@
         </dependency> -->
 
         <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-log4j12</artifactId>
+        </dependency>
+
+        <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
+            <scope>test</scope>
         </dependency>
 
         <dependency>

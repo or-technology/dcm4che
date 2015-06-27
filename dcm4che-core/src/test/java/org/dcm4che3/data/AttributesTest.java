@@ -42,11 +42,6 @@ import static org.junit.Assert.*;
 
 import java.util.Date;
 
-import org.dcm4che3.data.Tag;
-import org.dcm4che3.data.Attributes;
-import org.dcm4che3.data.DatePrecision;
-import org.dcm4che3.data.DateRange;
-import org.dcm4che3.data.VR;
 import org.dcm4che3.io.BulkDataDescriptor;
 import org.dcm4che3.util.ByteUtils;
 import org.dcm4che3.util.DateUtils;
@@ -270,6 +265,26 @@ public class AttributesTest {
         Attributes modified = original.getModified(other, null);
         assertEquals(4, modified.size());
         assertModified(modified);
+    }
+
+    @Test
+    public void testGetModified_LIB_363()
+    {
+        // tests the fix for LIB-363
+
+        Attributes original = new Attributes();
+        original.setString(Tag.AccessionNumber, VR.SH, "AccessionNumber");
+        
+        Attributes other = new Attributes();
+        other.setString(Tag.SOPInstanceUID, VR.UI, "1.2.3.4");
+        other.setString(Tag.AccessionNumber, VR.SH, "AccessionNumber2");
+
+        Attributes modified = original.getModified(other, null);
+
+        Attributes expected = new Attributes();
+        expected.setString(Tag.AccessionNumber, VR.SH, "AccessionNumber");
+
+        assertEquals(expected, modified);
     }
 
     @Test

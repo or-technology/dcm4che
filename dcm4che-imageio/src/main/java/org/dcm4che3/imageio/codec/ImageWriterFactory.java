@@ -38,6 +38,7 @@
 
 package org.dcm4che3.imageio.codec;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
@@ -72,8 +73,7 @@ import org.slf4j.LoggerFactory;
 @LDAP(objectClasses = "dcmImageWriterFactory")
 @ConfigurableClass
 public class ImageWriterFactory implements Serializable {
-
-    private static final Logger LOG = LoggerFactory.getLogger(ImageReaderFactory.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ImageWriterFactory.class);
 
     private static final long serialVersionUID = 6328126996969794374L;
 
@@ -336,8 +336,14 @@ public class ImageWriterFactory implements Serializable {
             url = new URL(name);
         } catch (MalformedURLException e) {
             url = ResourceLocator.getResourceURL(name, this.getClass());
-            if (url == null)
-                throw new IOException("No such resource: " + name);
+            if (url == null) {
+                File f = new File(name);
+                if(f.exists() && f.isFile()) {
+                    url = f.toURI().toURL();
+                } else {
+                    throw new IOException("No such resource: " + name);
+                }
+            }
         }
         InputStream in = url.openStream();
         try {
@@ -398,7 +404,7 @@ public class ImageWriterFactory implements Serializable {
 
     public static ImageWriter getImageWriter(ImageWriterParam param) {
 
-        // ImageWriterSpi are laoded through the java ServiceLoader,
+        // ImageWriterSpi are loaded through the java ServiceLoader,
         // istead of imageio ServiceRegistry
         Iterator<ImageWriterSpi> iter = ServiceLoader.load(ImageWriterSpi.class).iterator();
 
