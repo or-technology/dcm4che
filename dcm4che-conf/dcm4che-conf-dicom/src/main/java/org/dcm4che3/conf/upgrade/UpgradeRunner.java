@@ -42,6 +42,8 @@ package org.dcm4che3.conf.upgrade;
 
 
 import org.dcm4che3.conf.api.DicomConfiguration;
+import org.dcm4che3.conf.api.internal.DicomConfigurationManager;
+import org.dcm4che3.conf.api.upgrade.ScriptVersion;
 import org.dcm4che3.conf.api.upgrade.UpgradeScript;
 import org.dcm4che3.conf.core.DefaultBeanVitalizer;
 import org.dcm4che3.conf.core.api.Configuration;
@@ -59,27 +61,26 @@ import java.util.Properties;
  */
 public class UpgradeRunner {
 
+    public static final String RUN_ALWAYS = "org.dcm4che.conf.upgrade.runAlways";
     private static Logger log = LoggerFactory
             .getLogger(UpgradeRunner.class);
 
     public static final String METADATA_ROOT_PATH = "/dicomConfigurationRoot/metadataRoot/versioning";
 
-    private Configuration configuration;
     private Collection<UpgradeScript> availableUpgradeScripts;
-    private DicomConfiguration dicomConfiguration;
+    private DicomConfigurationManager dicomConfigurationManager;
     private UpgradeSettings upgradeSettings;
 
     public UpgradeRunner() {
     }
 
-    public UpgradeRunner(Configuration configuration, Collection<UpgradeScript> availableUpgradeScripts, DicomConfiguration dicomConfiguration, UpgradeSettings upgradeSettings) {
-        this.configuration = configuration;
+    public UpgradeRunner(Collection<UpgradeScript> availableUpgradeScripts, DicomConfigurationManager dicomConfigurationManager, UpgradeSettings upgradeSettings) {
         this.availableUpgradeScripts = availableUpgradeScripts;
-        this.dicomConfiguration = dicomConfiguration;
+        this.dicomConfigurationManager = dicomConfigurationManager;
         this.upgradeSettings = upgradeSettings;
     }
 
-    public void upgrade() throws ConfigurationException {
+    public void upgrade() {
         if (upgradeSettings == null) {
             log.info("Dcm4che configuration init: upgrade is not configured, no upgrade will be performed");
             return;
@@ -88,60 +89,100 @@ public class UpgradeRunner {
         String toVersion = upgradeSettings.getUpgradeToVersion();
         if (toVersion != null) {
             log.info("Dcm4che configuration init: upgrading configuration to version " + toVersion);
-            migrateToVersion(toVersion);
+            upgradeToVersion(toVersion);
         } else
             log.warn("Dcm4che configuration init: upgrade version is null");
 
     }
 
 
-    protected ConfigurationMetadata migrateToVersion(String toVersion) throws ConfigurationException {
+    protected void upgradeToVersion(final String toVersion) {
+        dicomConfigurationManager.runBatch(new DicomConfiguration.DicomConfigBatch() {
+            @Override
+            public void run() {
 
-        configuration.lock();
+                try {
 
-        BeanVitalizer beanVitalizer = new DefaultBeanVitalizer();
+                    Configuration configuration = dicomConfigurationManager.getConfigurationStorage();
+                    configuration.lock();
 
-        Object metadataNode = configuration.getConfigurationNode(METADATA_ROOT_PATH, ConfigurationMetadata.class);
-        ConfigurationMetadata configMetadata = null;
-        if (metadataNode != null)
-            configMetadata = beanVitalizer.newConfiguredInstance((Map<String, Object>) metadataNode, ConfigurationMetadata.class);
-        else {
-            configMetadata = new ConfigurationMetadata();
-            configMetadata.setVersion(UpgradeScript.NO_VERSION);
-        }
-        String fromVersion = configMetadata.getVersion();
+                    BeanVitalizer beanVitalizer = new DefaultBeanVitalizer();
 
-        // check if we need to run scripts at all
-        if (fromVersion.compareToIgnoreCase(toVersion) >= 0) {
-            log.info("Skipping configuration upgrade - configuration version is already " + toVersion);
-            return configMetadata;
-        }
+                    Object metadataNode = configuration.getConfigurationNode(METADATA_ROOT_PATH, ConfigurationMetadata.class);
+                    ConfigurationMetadata configMetadata = null;
+                    if (metadataNode != null)
+                        configMetadata = beanVitalizer.newConfiguredInstance((Map<String, Object>) metadataNode, ConfigurationMetadata.class);
+                    else {
+                        configMetadata = new ConfigurationMetadata();
+                        configMetadata.setVersion(UpgradeScript.NO_VERSION);
+                    }
+                    String fromVersion = configMetadata.getVersion();
 
+                    Properties props = new Properties();
+                    props.putAll(upgradeSettings.getProperties());
 
+                    if (props.getProperty(RUN_ALWAYS) == null) {
+                        // check if we need to run scripts at all
+                        if (fromVersion.compareToIgnoreCase(toVersion) >= 0) {
+                            log.info("Skipping configuration upgrade - configuration version is already " + toVersion);
+                            return;
+                        }
+                    } else {
+                        log.warn("org.dcm4che.conf.upgrade.runAlways is set to TRUE, all the upgrade scripts will be re-executed unconditionally. " +
+                                "This is NOT supposed to be used in production and may introduce inconsistencies in a clustered setup.");
+                    }
 
-        Properties props = new Properties();
-        props.putAll(upgradeSettings.getProperties());
+                    log.info("Config upgrade scripts specified in settings: {}", upgradeSettings.getUpgradeScriptsToRun());
+                    log.info("Config upgrade scripts discovered in the deployment: {}", availableUpgradeScripts);
 
-        UpgradeScript.UpgradeContext upgradeContext = new UpgradeScript.UpgradeContext(fromVersion, toVersion, props, configuration, dicomConfiguration);
+                    // run all scripts
+                    for (String upgradeScriptName : upgradeSettings.getUpgradeScriptsToRun()) {
 
-        log.info("Config upgrade scripts specified in settings: {}", upgradeSettings.getUpgradeScriptsToRun());
-        log.info("Config upgrade scripts discovered in the deployment: {}", availableUpgradeScripts);
+                        boolean found = false;
 
-        // run all scripts
-        for (String upgradeScriptName : upgradeSettings.getUpgradeScriptsToRun()) {
-            for (UpgradeScript script : availableUpgradeScripts) {
-                if (script.getClass().getName().equals(upgradeScriptName)) {
-                    log.info("Executing upgrade script {}", upgradeScriptName);
-                    script.upgrade(upgradeContext);
+                        for (UpgradeScript script : availableUpgradeScripts) {
+                            if (script.getClass().getName().equals(upgradeScriptName)) {
+                                log.info("Executing upgrade script {}", upgradeScriptName);
+
+                                // fetch upgradescript metadata
+                                UpgradeScript.UpgradeScriptMetadata upgradeScriptMetadata = configMetadata.getMetadataOfUpgradeScripts().get(upgradeScriptName);
+                                if (upgradeScriptMetadata == null) {
+                                    upgradeScriptMetadata = new UpgradeScript.UpgradeScriptMetadata();
+                                    configMetadata.getMetadataOfUpgradeScripts().put(upgradeScriptName, upgradeScriptMetadata);
+                                }
+
+                                // collect pieces and prepare context
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> scriptConfig = (Map<String, Object>) upgradeSettings.getUpgradeConfig().get(upgradeScriptName);
+                                UpgradeScript.UpgradeContext upgradeContext = new UpgradeScript.UpgradeContext(
+                                        fromVersion, toVersion, props, scriptConfig, configuration, dicomConfigurationManager, upgradeScriptMetadata);
+
+                                script.upgrade(upgradeContext);
+
+                                // set last executed version from the annotation of the upgrade script if present
+                                ScriptVersion scriptVersion = script.getClass().getAnnotation(ScriptVersion.class);
+                                if (scriptVersion != null) {
+                                    upgradeScriptMetadata.setLastVersionExecuted(scriptVersion.value());
+                                }
+
+                                found = true;
+                            }
+                        }
+
+                        if (!found)
+                            throw new ConfigurationException("Upgrade script " + upgradeScriptName + " not found in the deployment");
+                    }
+
+                    // update version
+                    configMetadata.setVersion(toVersion);
+
+                    // persist metadata
+                    configuration.persistNode(METADATA_ROOT_PATH, beanVitalizer.createConfigNodeFromInstance(configMetadata), ConfigurationMetadata.class);
+                } catch (ConfigurationException e) {
+                    throw new RuntimeException("Error while running the upgrade", e);
                 }
             }
-        }
-
-        // update version
-        configMetadata.setVersion(toVersion);
-        configuration.persistNode(METADATA_ROOT_PATH, beanVitalizer.createConfigNodeFromInstance(configMetadata), ConfigurationMetadata.class);
-
-        return configMetadata;
+        });
     }
 
 

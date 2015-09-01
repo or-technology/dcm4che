@@ -38,7 +38,6 @@
 
 package org.dcm4che3.data;
 
-import org.dcm4che3.dict.siemens.SiemensCSAHeader;
 import static org.junit.Assert.*;
 
 import org.junit.Test;
@@ -61,13 +60,6 @@ public class ValueSelectorTest {
         ItemPointer ip = new ItemPointer(Tag.RequestAttributesSequence);
         ValueSelector vs = new ValueSelector(null, Tag.StudyInstanceUID, null, 0, ip);
         assertEquals(XPATH, vs.toString());
-    }
-
-    @Test
-    public void testPrivateToString() {
-        ValueSelector vs = new ValueSelector(SiemensCSAHeader.PrivateCreator,
-                SiemensCSAHeader.CSAImageHeaderInfo, null, 0);
-        assertEquals(XPATH2, vs.toString());
     }
 
    @Test

@@ -40,8 +40,12 @@
 
 package org.dcm4che3.conf.upgrade;
 
+import org.dcm4che3.conf.api.upgrade.UpgradeScript;
 import org.dcm4che3.conf.core.api.ConfigurableClass;
 import org.dcm4che3.conf.core.api.ConfigurableProperty;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * @author Roman K
@@ -52,6 +56,9 @@ public class ConfigurationMetadata {
     @ConfigurableProperty
     private String version;
 
+    @ConfigurableProperty
+    Map<String, UpgradeScript.UpgradeScriptMetadata> metadataOfUpgradeScripts = new HashMap<String, UpgradeScript.UpgradeScriptMetadata>();
+
     public String getVersion() {
         return version;
     }
@@ -59,6 +66,15 @@ public class ConfigurationMetadata {
     public void setVersion(String version) {
         this.version = version;
     }
+
+    public Map<String, UpgradeScript.UpgradeScriptMetadata> getMetadataOfUpgradeScripts() {
+        return metadataOfUpgradeScripts;
+    }
+
+    public void setMetadataOfUpgradeScripts(Map<String, UpgradeScript.UpgradeScriptMetadata> metadataOfUpgradeScripts) {
+        this.metadataOfUpgradeScripts = metadataOfUpgradeScripts;
+    }
+
 }
 
 

@@ -52,13 +52,17 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.Properties;
+import java.util.TreeMap;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
+
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
@@ -67,6 +71,7 @@ import javax.xml.stream.XMLStreamReader;
 import org.dcm4che3.conf.core.api.ConfigurableClass;
 import org.dcm4che3.conf.core.api.ConfigurableProperty;
 import org.dcm4che3.conf.core.api.LDAP;
+import org.dcm4che3.data.UID;
 import org.dcm4che3.imageio.codec.jpeg.PatchJPEGLS;
 import org.dcm4che3.util.ResourceLocator;
 import org.dcm4che3.util.SafeClose;
@@ -75,8 +80,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
+ * Provides Image Readers for different DICOM transfer syntaxes and MIME types.
+ * 
  * @author Gunter Zeilinger <gunterze@gmail.com>
- *
+ * @author Hermann Czedik-Eysenberg <hermann-agfa@czedik.net>
  */
 @LDAP(objectClasses = "dcmImageReaderFactory")
 @ConfigurableClass
@@ -85,7 +92,7 @@ public class ImageReaderFactory implements Serializable {
     private static final Logger LOG = LoggerFactory.getLogger(ImageReaderFactory.class);
 
     private static final long serialVersionUID = -2881173333124498212L;
-    
+
     @LDAP(objectClasses = "dcmImageReader")
     @ConfigurableClass
     public static class ImageReaderParam implements Serializable {
@@ -137,11 +144,15 @@ public class ImageReaderFactory implements Serializable {
             return patchJPEGLS;
         }
 
+        public void setPatchJPEGLS(PatchJPEGLS patchJPEGLS) {
+            this.patchJPEGLS = patchJPEGLS;
+        }
+        
         public String toString() {
             return name;
         }
     }
-    
+
     private static String nullify(String s) {
         return s == null || s.isEmpty() || s.equals("*") ? null : s;
     }
@@ -171,17 +182,32 @@ public class ImageReaderFactory implements Serializable {
     @LDAP(distinguishingField = "dicomTransferSyntax", noContainerNode = true)
     @ConfigurableProperty(
             name="dicomImageReaderMap",
-            label = "Image Readers",
-            description = "Image readers by transfer syntaxes"
+            label = "Image Readers by Transfer Syntax",
+            description = "Image readers by Transfer Syntax"
     )
-    private Map<String, List<ImageReaderParam>> map = new LinkedHashMap<String, List<ImageReaderParam>>();
+    private Map<String, List<ImageReaderParam>> mapTransferSyntaxUIDs = new LinkedHashMap<String, List<ImageReaderParam>>();
 
-    public Map<String, List<ImageReaderParam>> getMap() {
-        return map;
+    @ConfigurableProperty(
+            name="dicomImageReaderMapMime",
+            label = "Image Readers by MIME type",
+            description = "Image readers by MIME type"
+    )
+    private Map<String, List<ImageReaderParam>> mapMimeTypes = new TreeMap<String, List<ImageReaderParam>>();
+    
+    public Map<String, List<ImageReaderParam>> getMapTransferSyntaxUIDs() {
+        return mapTransferSyntaxUIDs;
     }
 
-    public void setMap(Map<String, List<ImageReaderParam>> map) {
-        this.map = map;
+    public void setMapTransferSyntaxUIDs(Map<String, List<ImageReaderParam>> map) {
+        this.mapTransferSyntaxUIDs = map;
+    }
+    
+    public Map<String, List<ImageReaderParam>> getMapMimeTypes() {
+        return mapMimeTypes;
+    }
+
+    public void setMapMimeTypes(Map<String, List<ImageReaderParam>> mapMimeTypes) {
+        this.mapMimeTypes = mapMimeTypes;
     }
 
     public static ImageReaderFactory getDefault() {
@@ -319,37 +345,37 @@ public class ImageReaderFactory implements Serializable {
         }
     }
 
-    public List<ImageReaderParam> get(String tsuid) {
-        return map.get(tsuid);
+    public List<ImageReaderParam> getForTransferSyntaxUID(String tsuid) {
+        return mapTransferSyntaxUIDs.get(tsuid);
     }
 
-    public boolean contains(String tsuid) {
-        return map.containsKey(tsuid);
+    public List<ImageReaderParam> getForMimeType(String mimeType) {
+        return mapMimeTypes.get(mimeType);
     }
 
     private boolean put(String tsuid, ImageReaderParam param) {
-        List<ImageReaderParam> readerSet = get(tsuid);
+        List<ImageReaderParam> readerSet = getForTransferSyntaxUID(tsuid);
         if (readerSet == null) {
             readerSet = new ArrayList<ImageReaderParam>();
-            map.put(tsuid, readerSet);
+            mapTransferSyntaxUIDs.put(tsuid, readerSet);
         }
         return readerSet.add(param);
     }
 
     private List<ImageReaderParam> remove(String tsuid) {
-        return map.remove(tsuid);
+        return mapTransferSyntaxUIDs.remove(tsuid);
     }
 
     public Set<Entry<String, List<ImageReaderParam>>> getEntries() {
-        return Collections.unmodifiableMap(map).entrySet();
+        return Collections.unmodifiableMap(mapTransferSyntaxUIDs).entrySet();
     }
 
     public void clear() {
-        map.clear();
+        mapTransferSyntaxUIDs.clear();
     }
 
     public static ImageReaderItem getImageReader(String tsuid) {
-        List<ImageReaderParam> list = getDefault().get(tsuid);        
+        List<ImageReaderParam> list = getDefault().getForTransferSyntaxUID(tsuid);        
         if (list != null) {
             synchronized (list) {
                 for (Iterator<ImageReaderParam> it = list.iterator(); it.hasNext();) {

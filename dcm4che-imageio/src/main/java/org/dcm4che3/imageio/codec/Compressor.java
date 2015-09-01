@@ -42,11 +42,7 @@ import java.awt.image.DataBuffer;
 import java.awt.image.DataBufferByte;
 import java.awt.image.DataBufferShort;
 import java.awt.image.DataBufferUShort;
-import java.io.ByteArrayOutputStream;
-import java.io.Closeable;
-import java.io.FilterOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
 import java.nio.ByteOrder;
 
 import javax.imageio.IIOImage;
@@ -56,6 +52,7 @@ import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
 import javax.imageio.stream.FileImageInputStream;
 import javax.imageio.stream.ImageInputStream;
+import javax.imageio.stream.MemoryCacheImageInputStream;
 import javax.imageio.stream.MemoryCacheImageOutputStream;
 
 import org.dcm4che3.data.Tag;
@@ -81,12 +78,14 @@ import org.slf4j.LoggerFactory;
  * @author Gunter Zeilinger <gunterze@gmail.com>
  *
  */
-public class Compressor extends Decompressor implements Closeable {
+public class Compressor implements Closeable {
 
     private static final Logger LOG = LoggerFactory.getLogger(Compressor.class);
 
-    private BulkData pixeldata;
+    private final Attributes dataset;
+    private Object pixels;
     private VR.Holder pixeldataVR = new VR.Holder();
+    private final TransferSyntaxType tsType;
     private ImageWriter compressor;
     private ImageReader verifier;
     private PatchJPEGLS compressPatchJPEGLS;
@@ -97,27 +96,35 @@ public class Compressor extends Decompressor implements Closeable {
     private int maxPixelValueError = -1;
     private int avgPixelValueBlockSize = 1;
     private BufferedImage bi2;
+    private ImageParams imageParams;
+    private Decompressor decompressor = null;
+    private BufferedImage bi;
 
     private ImageReadParam verifyParam;
 
-    public Compressor(Attributes dataset, String from) {
-        super(dataset, from);
+    public Compressor(Attributes dataset, String tsuid) {
+        this.dataset = dataset;
+        this.imageParams = new ImageParams(dataset);
+        this.tsType = TransferSyntaxType.forUID(tsuid);
 
-        Object pixeldata = dataset.getValue(Tag.PixelData, pixeldataVR);
-        if (pixeldata == null)
+        pixels = dataset.getValue(Tag.PixelData, pixeldataVR);
+        if (pixels == null)
             return;
 
-        if (pixeldata instanceof BulkData) {
-            this.pixeldata = (BulkData) pixeldata;
+        if (pixels instanceof BulkData) {
             PhotometricInterpretation pmi = imageParams.getPhotometricInterpretation();
             if (pmi.isSubSambled())
                 throw new UnsupportedOperationException(
                         "Unsupported Photometric Interpretation: " + pmi);
-            if (this.pixeldata.length() < imageParams.getLength())
+            if (((BulkData) pixels).length() < imageParams.getLength())
                 throw new IllegalArgumentException(
-                        "Pixel data too short: " + this.pixeldata.length()
+                        "Pixel data too short: " + ((BulkData) pixels).length()
                         + " instead " + imageParams.getLength() + " bytes");
         }
+
+        if (pixels instanceof Fragments)
+            this.decompressor = new Decompressor(dataset, tsuid);
+
         embeddedOverlays = Overlays.getEmbeddedOverlayGroupOffsets(dataset);
     }
 
@@ -169,7 +176,7 @@ public class Compressor extends Decompressor implements Closeable {
         }
 
         TransferSyntaxType compressTsType = TransferSyntaxType.forUID(compressTsuid);
-        if (decompressor == null || super.tsType == TransferSyntaxType.RLE)
+        if (decompressor == null || tsType == TransferSyntaxType.RLE)
             bi = BufferedImageUtils.createBufferedImage(imageParams, compressTsType);
         imageParams.compress(dataset, compressTsType);
         int frames = imageParams.getFrames();
@@ -206,12 +213,12 @@ public class Compressor extends Decompressor implements Closeable {
         dispose();
     }
 
-    @Override
     public void dispose() {
-        super.dispose();
-
         if (compressor != null)
             compressor.dispose();
+
+        if (decompressor != null)
+            decompressor.dispose();
 
         if (verifier != null)
             verifier.dispose();
@@ -330,23 +337,35 @@ public class Compressor extends Decompressor implements Closeable {
 
     public BufferedImage readFrame(int frameIndex) throws IOException {
         if (iis == null)
-            iis = new FileImageInputStream(file);
+            iis = createImageInputStream(frameIndex);
 
         if (decompressor != null)
-            return decompressFrame(iis, frameIndex);
+            return decompressor.decompressFrame(iis, frameIndex);
 
-        iis.setByteOrder(pixeldata.bigEndian
-                ? ByteOrder.BIG_ENDIAN
-                : ByteOrder.LITTLE_ENDIAN);
-        iis.seek(pixeldata.offset() + imageParams.getFrameLength() * frameIndex);
+        if (pixels instanceof BulkData) {
+            iis.setByteOrder(((BulkData)pixels).bigEndian
+                    ? ByteOrder.BIG_ENDIAN
+                    : ByteOrder.LITTLE_ENDIAN);
+            iis.seek(((BulkData)pixels).offset() + imageParams.getFrameLength() * frameIndex);
+        } else {
+            iis.setByteOrder(dataset.bigEndian()
+                    ? ByteOrder.BIG_ENDIAN
+                    : ByteOrder.LITTLE_ENDIAN);
+            iis.seek(imageParams.getFrameLength() * frameIndex);
+        }
         DataBuffer db = bi.getRaster().getDataBuffer();
         switch (db.getDataType()) {
         case DataBuffer.TYPE_BYTE:
             byte[][] data = ((DataBufferByte) db).getBankData();
             for (byte[] bs : data)
                 iis.readFully(bs);
-            if (pixeldata.bigEndian && pixeldataVR.vr == VR.OW)
-                ByteUtils.swapShorts(data);
+            if (pixels instanceof BulkData) {
+                if (((BulkData)pixels).bigEndian && pixeldataVR.vr == VR.OW)
+                    ByteUtils.swapShorts(data);
+            } else {
+                if (dataset.bigEndian() && pixeldataVR.vr == VR.OW)
+                    ByteUtils.swapShorts(data);
+            }
             break;
         case DataBuffer.TYPE_USHORT:
             readFully(((DataBufferUShort) db).getData());
@@ -404,4 +423,16 @@ public class Compressor extends Decompressor implements Closeable {
         iis.readFully(data, 0, data.length);
     }
 
+    public ImageInputStream createImageInputStream(int frameIndex) throws IOException {
+
+        if (pixels instanceof BulkData) {
+            return new FileImageInputStream(((BulkData) pixels).getFile());
+        }
+
+        if (pixels instanceof byte[]) {
+            return new MemoryCacheImageInputStream(new ByteArrayInputStream((byte[])pixels));
+        }
+
+        return null;
+    }
 }
