@@ -48,7 +48,6 @@ set CP=%CP%;%DCM4CHE_HOME%\lib\dcm4che-image-${project.version}.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\dcm4che-imageio-${project.version}.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\dcm4che-imageio-codec-${project.version}.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\dcm4che-tool-common-${project.version}.jar
-set CP=%CP%;%DCM4CHE_HOME%\lib\weasis-imageio-codec-2.0.4-SNAPSHOT.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\slf4j-api-1.7.5.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\slf4j-log4j12-1.7.5.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\log4j-1.2.17.jar
