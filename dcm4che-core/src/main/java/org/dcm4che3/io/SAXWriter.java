@@ -40,7 +40,6 @@ package org.dcm4che3.io;
 
 import java.io.IOException;
 
-import org.dcm4che3.data.Tag;
 import org.dcm4che3.data.Attributes;
 import org.dcm4che3.data.BulkData;
 import org.dcm4che3.data.ElementDictionary;
@@ -48,6 +47,7 @@ import org.dcm4che3.data.Fragments;
 import org.dcm4che3.data.PersonName;
 import org.dcm4che3.data.Sequence;
 import org.dcm4che3.data.SpecificCharacterSet;
+import org.dcm4che3.data.Tag;
 import org.dcm4che3.data.VR;
 import org.dcm4che3.data.Value;
 import org.dcm4che3.io.DicomInputStream.IncludeBulkData;
@@ -96,9 +96,29 @@ public class SAXWriter implements DicomInputHandler {
 
     public void write(Attributes attrs) throws SAXException {
         startDocument();
-        attrs.writeTo(this);
+        writeItem(attrs);
         endDocument();
     }
+
+    private void writeItem(final Attributes item) throws SAXException {
+        final SpecificCharacterSet cs = item.getSpecificCharacterSet();
+        try {
+            item.accept(new Attributes.Visitor(){
+
+                @Override
+                public boolean visit(Attributes attrs, int tag, VR vr, Object value)
+                        throws Exception {
+                     writeAttribute(tag, vr, value, cs, item);
+                     return true;
+                }},
+                false);
+        } catch (SAXException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
 
     @Override
     public void startDataset(DicomInputStream dis) throws IOException {
@@ -120,7 +140,7 @@ public class SAXWriter implements DicomInputHandler {
 
     private void startDocument() throws SAXException {
         ch.startDocument();
-        startElement("NativeDicomModel", "xml-space", "preserved");
+        startElement("NativeDicomModel", "xml:space", "preserve");
     }
 
     private void endDocument() throws SAXException {
@@ -152,7 +172,7 @@ public class SAXWriter implements DicomInputHandler {
         atts.addAttribute(namespace, name, name, "NMTOKEN", value);
     }
 
-    public void writeAttribute(int tag, VR vr, Object value,
+    private void writeAttribute(int tag, VR vr, Object value,
             SpecificCharacterSet cs, Attributes attrs) throws SAXException {
         if (TagUtils.isGroupLength(tag) || TagUtils.isPrivateCreator(tag))
             return;
@@ -160,11 +180,18 @@ public class SAXWriter implements DicomInputHandler {
         String privateCreator = attrs.getPrivateCreator(tag);
         addAttributes(tag, vr, privateCreator);
         startElement("DicomAttribute");
-        if (value instanceof Value) {
+        if (value instanceof Value)
             writeAttribute((Value) value, attrs.bigEndian());
-        } else {
-            vr.toXML(value, attrs.bigEndian(), cs, this);
-        }
+        else if (!vr.isInlineBinary()) {
+            writeValues(vr, value, attrs.bigEndian(),
+                    attrs.getSpecificCharacterSet(vr));
+        } else if (value instanceof byte[]) {
+            writeInlineBinary(attrs.bigEndian()
+                    ? vr.toggleEndian((byte[]) value, true)
+                    : (byte[]) value);
+        } else
+            throw new IllegalArgumentException("vr: " + vr + ", value class: "
+                    + value.getClass());
         endElement("DicomAttribute");
     }
 
@@ -178,26 +205,26 @@ public class SAXWriter implements DicomInputHandler {
             int number = 0;
             for (Attributes item : seq) {
                 startElement("Item", "number", ++number);
-                item.writeTo(this);
+                writeItem(item);
                 endElement("Item");
             }
         } else if (value instanceof Fragments) {
             Fragments frags = (Fragments) value;
-            int number = 0;
-            for (Object frag : frags) {
-                ++number;
-                if (frag instanceof Value && ((Value) frag).isEmpty())
-                    continue;
-                startElement("DataFragment", "number", number);
-                if (frag instanceof BulkData)
-                    writeBulkData((BulkData) frag);
-                else {
+            if (frags.size() > 1 && frags.get(1) instanceof BulkData)
+                writeBulkData(BulkData.fromFragments(frags));
+            else {
+                int number = 0;
+                for (Object frag : frags) {
+                    ++number;
+                    if (frag instanceof Value && ((Value) frag).isEmpty())
+                        continue;
+                    startElement("DataFragment", "number", number);
                     byte[] b = (byte[]) frag;
                     if (bigEndian)
                         frags.vr().toggleEndian(b, true);
                     writeInlineBinary(b);
+                    endElement("DataFragment");
                 }
-                endElement("DataFragment");
             }
         } else if (value instanceof BulkData) {
             writeBulkData((BulkData) value);
@@ -224,6 +251,9 @@ public class SAXWriter implements DicomInputHandler {
             startElement("DicomAttribute");
             if (vr == VR.SQ || len == -1) {
                 dis.readValue(dis, attrs);
+                if (vr != VR.SQ && dis.getIncludeFragmentBulkData() == IncludeBulkData.URI) {
+                    writeBulkData(BulkData.fromFragments((Fragments) attrs.remove(privateCreator, tag)));
+                }
             } else if (len > 0) {
                 if (dis.getIncludeBulkData() ==  IncludeBulkData.URI
                         && dis.isBulkData(attrs)) {
@@ -233,10 +263,14 @@ public class SAXWriter implements DicomInputHandler {
                     if (tag == Tag.TransferSyntaxUID
                             || tag == Tag.SpecificCharacterSet)
                         attrs.setBytes(tag, vr, b);
-                    if (dis.bigEndian())
-                        vr.toggleEndian(b, false);
-                    vr.toXML(b, false, attrs.getSpecificCharacterSet(vr), this);
-                }
+                    if (vr.isInlineBinary())
+                        writeInlineBinary(dis.bigEndian()
+                                ? vr.toggleEndian(b, false)
+                                : b);
+                    else
+                        writeValues(vr, b, dis.bigEndian(),
+                                attrs.getSpecificCharacterSet(vr));
+                 }
             }
             endElement("DicomAttribute");
         } catch (SAXException e) {
@@ -274,35 +308,53 @@ public class SAXWriter implements DicomInputHandler {
     public void readValue(DicomInputStream dis, Fragments frags)
             throws IOException {
         int len = dis.length();
-        if (dis.getIncludeBulkData() == IncludeBulkData.NO
-                && dis.isBulkDataFragment(frags)) {
-            dis.skipFully(len);
-        } else try {
-            frags.add(ByteUtils.EMPTY_BYTES); // increment size
-            if (len > 0) {
-                startElement("DataFragment", "number", frags.size());
-                if (dis.getIncludeBulkData() == IncludeBulkData.URI
-                        && dis.isBulkDataFragment(frags)) {
-                    writeBulkData(dis.createBulkData());
-                } else {
+        Object frag = ByteUtils.EMPTY_BYTES;
+        if (len > 0)
+            switch (dis.getIncludeFragmentBulkData()) {
+                case NO:
+                    dis.skipFully(len);
+                    return;
+                case URI:
+                    frag = dis.createBulkData();
+                    break;
+                case YES:
                     byte[] b = dis.readValue();
                     if (dis.bigEndian())
                         frags.vr().toggleEndian(b, false);
-                    writeInlineBinary(b);
-                }
-                endElement("DataFragment");
+                    try {
+                        startElement("DataFragment", "number", frags.size() + 1);
+                        writeInlineBinary(b);
+                        endElement("DataFragment");
+                    } catch (SAXException e) {
+                        throw new IOException(e);
+                    }
+                    break;
             }
-        } catch (SAXException e) {
-            throw new IOException(e);
+        frags.add(frag); // increment size
+    }
+
+    private void writeValues(VR vr, Object val, boolean bigEndian,
+            SpecificCharacterSet cs) throws SAXException {
+        if (vr.isStringType())
+            val = vr.toStrings(val, bigEndian, cs);
+        int vm = vr.vmOf(val);
+        for (int i = 0; i < vm; i++) {
+            String s = vr.toString(val, bigEndian, i, "");
+            addAttribute("number", Integer.toString(i + 1));
+            if (vr == VR.PN) {
+                PersonName pn = new PersonName(s, true);
+                startElement("PersonName");
+                writePNGroup("Alphabetic", pn, PersonName.Group.Alphabetic);
+                writePNGroup("Ideographic", pn, PersonName.Group.Ideographic);
+                writePNGroup("Phonetic", pn, PersonName.Group.Phonetic);
+                endElement("PersonName");
+            } else {
+                writeElement("Value", s);
+            }
         }
     }
 
-    public void writeValue(int index, String s) throws SAXException {
-        addAttribute("number", Integer.toString(index + 1));
-        writeElement("Value", s);
-    }
-
-    public void writeInlineBinary(byte[] b) throws SAXException {
+    private void writeInlineBinary(byte[] b) throws SAXException {
         startElement("InlineBinary");
         char[] buf = buffer;
         for (int off = 0; off < b.length;) {
@@ -334,16 +386,6 @@ public class SAXWriter implements DicomInputHandler {
                 ch.characters(buf, 0, len);
             }
             endElement(qname);
-        }
-    }
-
-    public void writePersonName(int index, PersonName pn) throws SAXException {
-        if (!pn.isEmpty()) {
-            startElement("PersonName", "number", index + 1);
-            writePNGroup("Alphabetic", pn, PersonName.Group.Alphabetic);
-            writePNGroup("Ideographic", pn, PersonName.Group.Ideographic);
-            writePNGroup("Phonetic", pn, PersonName.Group.Phonetic);
-            endElement("PersonName");
         }
     }
 

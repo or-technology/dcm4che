@@ -46,8 +46,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URL;
 
-import org.dcm4che3.util.StringUtils;
-
 /**
  * @author Gunter Zeilinger <gunterze@gmail.com>
  */
@@ -151,7 +149,7 @@ public class StreamUtils {
 
     public static InputStream openFileOrURL(String name) throws IOException {
         if (name.startsWith("resource:")) {
-            URL url = StringUtils.getResourceURL(name.substring(9), StreamUtils.class);
+            URL url = ResourceLocator.getResourceURL(name.substring(9), StreamUtils.class);
             if (url == null)
                 throw new FileNotFoundException(name);
             return url.openStream();

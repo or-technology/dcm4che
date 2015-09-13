@@ -38,36 +38,28 @@
 
 package org.dcm4che3.net;
 
-import java.io.ByteArrayOutputStream;
+import java.io.Closeable;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.Serializable;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.SocketAddress;
-import java.net.SocketException;
-import java.net.UnknownHostException;
+import java.net.*;
 import java.security.GeneralSecurityException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.EnumMap;
-import java.util.List;
+import java.util.*;
 
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLServerSocket;
-import javax.net.ssl.SSLServerSocketFactory;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
-import org.dcm4che3.util.Base64;
+import org.dcm4che3.conf.core.api.ConfigurableClass;
+import org.dcm4che3.conf.core.api.ConfigurableProperty;
+import org.dcm4che3.conf.core.api.ConfigurableProperty.Tag;
+import org.dcm4che3.conf.core.api.LDAP;
+import org.dcm4che3.net.proxy.ProxyManager;
+import org.dcm4che3.net.proxy.ProxyService;
 import org.dcm4che3.util.SafeClose;
 import org.dcm4che3.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 
 /**
  * A DICOM Part 15, Annex H compliant class, <code>NetworkConnection</code>
@@ -79,27 +71,41 @@ import org.slf4j.LoggerFactory;
  * port number. A network connection may support multiple Network AEs. The
  * Network AE selection takes place during association negotiation based on the
  * called and calling AE-titles.
- * 
- * @author Gunter Zeilinger <gunterze@gmail.com>
  *
+ * @author Gunter Zeilinger <gunterze@gmail.com>
  */
+@LDAP(objectClasses = {"dicomNetworkConnection", "dcmNetworkConnection"})
+@ConfigurableClass
 public class Connection implements Serializable {
 
     private static final long serialVersionUID = -7814748788035232055L;
 
-    public enum Protocol { DICOM, HL7, SYSLOG_TLS, SYSLOG_UDP;
-        public boolean isTCP() { return this != SYSLOG_UDP; }
-        public boolean isSyslog() { return this == SYSLOG_TLS || this == SYSLOG_UDP; }
+    public enum Protocol {
+        DICOM, HL7, SYSLOG_TLS, SYSLOG_UDP;
+
+        public boolean isTCP() {
+            return this != SYSLOG_UDP;
+        }
+
+        public boolean isSyslog() {
+            return this == SYSLOG_TLS || this == SYSLOG_UDP;
+        }
     }
 
     public static final Logger LOG = LoggerFactory.getLogger(Connection.class);
 
-    public static final int NO_TIMEOUT = 0;
+    public static final String NO_TIMEOUT_STR = "0";
+    public static final int NO_TIMEOUT = Integer.valueOf(NO_TIMEOUT_STR);
+
     public static final int SYNCHRONOUS_MODE = 1;
     public static final int NOT_LISTENING = -1;
     public static final int DEF_BACKLOG = 50;
     public static final int DEF_SOCKETDELAY = 50;
-    public static final int DEF_BUFFERSIZE = 0;
+
+    public static final String DEF_BUFFERSIZE_STR = "0";
+    public static final int DEF_BUFFERSIZE = Integer.valueOf(DEF_BUFFERSIZE_STR);
+
+
     public static final int DEF_MAX_PDU_LENGTH = 16378;
     // to fit into SunJSSE TLS Application Data Length 16408
 
@@ -108,42 +114,127 @@ public class Connection implements Serializable {
     public static final String TLS_RSA_WITH_AES_128_CBC_SHA = "TLS_RSA_WITH_AES_128_CBC_SHA";
 
     private Device device;
+
+    @ConfigurableProperty(name = "cn", label = "Name", tags = Tag.PRIMARY)
     private String commonName;
+
+    @ConfigurableProperty(name = "dicomHostname", label = "Hostname", tags = Tag.PRIMARY)
     private String hostname;
+
+    @ConfigurableProperty(name = "dcmBindAddress")
+    private String bindAddress;
+
+    @ConfigurableProperty(name = "dcmClientBindAddress")
+    private String clientBindAddress;
+
+    @ConfigurableProperty(name = "dcmHTTPProxy")
     private String httpProxy;
+
+    @ConfigurableProperty(
+            name = "dicomPort",
+            defaultValue = "-1",
+            label = "Port",
+            tags = Tag.PRIMARY)
     private int port = NOT_LISTENING;
+
+    @ConfigurableProperty(name = "dcmTCPBacklog", defaultValue = "50")
     private int backlog = DEF_BACKLOG;
+
+    @ConfigurableProperty(name = "dcmTCPConnectTimeout", defaultValue = NO_TIMEOUT_STR)
     private int connectTimeout;
+
+    @ConfigurableProperty(name = "dcmAARQTimeout", defaultValue = NO_TIMEOUT_STR)
     private int requestTimeout;
+
+    @ConfigurableProperty(name = "dcmAAACTimeout", defaultValue = NO_TIMEOUT_STR)
     private int acceptTimeout;
+
+    @ConfigurableProperty(name = "dcmARRPTimeout", defaultValue = NO_TIMEOUT_STR)
     private int releaseTimeout;
+
+    @ConfigurableProperty(name = "dcmResponseTimeout", defaultValue = NO_TIMEOUT_STR)
     private int responseTimeout;
+
+    @ConfigurableProperty(name = "dcmRetrieveTimeout", defaultValue = NO_TIMEOUT_STR)
     private int retrieveTimeout;
+
+    @ConfigurableProperty(name = "dcmIdleTimeout", defaultValue = NO_TIMEOUT_STR)
     private int idleTimeout;
+
+    @ConfigurableProperty(name = "dcmTCPCloseDelay", defaultValue = "50")
     private int socketCloseDelay = DEF_SOCKETDELAY;
+
+    @ConfigurableProperty(name = "dcmTCPSendBufferSize", defaultValue = DEF_BUFFERSIZE_STR)
     private int sendBufferSize;
+
+    @ConfigurableProperty(name = "dcmTCPReceiveBufferSize", defaultValue = DEF_BUFFERSIZE_STR)
     private int receiveBufferSize;
+
+    @ConfigurableProperty(name = "dcmSendPDULength", defaultValue = "16378")
     private int sendPDULength = DEF_MAX_PDU_LENGTH;
+
+    @ConfigurableProperty(name = "dcmReceivePDULength", defaultValue = "16378")
     private int receivePDULength = DEF_MAX_PDU_LENGTH;
+
+    @ConfigurableProperty(name = "dcmMaxOpsPerformed", defaultValue = "1")
     private int maxOpsPerformed = SYNCHRONOUS_MODE;
+
+    @ConfigurableProperty(name = "dcmMaxOpsInvoked", defaultValue = "1")
     private int maxOpsInvoked = SYNCHRONOUS_MODE;
+
+    @ConfigurableProperty(name = "dcmPackPDV", defaultValue = "true")
     private boolean packPDV = true;
+
+    @ConfigurableProperty(name = "dcmTCPNoDelay", defaultValue = "true")
     private boolean tcpNoDelay = true;
+
+    @ConfigurableProperty(name = "dcmTLSNeedClientAuth", defaultValue = "true")
     private boolean tlsNeedClientAuth = true;
+
+    @ConfigurableProperty(name = "dicomTLSCipherSuite")
     private String[] tlsCipherSuites = {};
-    private String[] tlsProtocols =  { "TLSv1", "SSLv3" };
+
+    @ConfigurableProperty(name = "dcmHTTPProxyProviderName", defaultValue = ProxyService.DEFAULT_PROVIDER_NAME)
+    private String httpProxyProviderName = ProxyService.DEFAULT_PROVIDER_NAME; 
+
+    @ConfigurableProperty(name = "dcmHTTPProxyProviderVersion", defaultValue = ProxyService.DEFAULT_VERSION)
+    private String httpProxyProviderVersion = ProxyService.DEFAULT_VERSION;
+
+    @ConfigurableProperty(name = "dcmTLSProtocol")
+    private String[] tlsProtocols = {"TLSv1", "SSLv3"};
+
+    @ConfigurableProperty(name = "dcmBlacklistedHostname")
     private String[] blacklist = {};
-    private Boolean installed;
+
+    @ConfigurableProperty(name = "dicomInstalled")
+    private Boolean connectionInstalled;
+
+    @ConfigurableProperty(name = "connectionExtensions", isExtensionsProperty = true)
+    private Map<Class<? extends ConnectionExtension>, ConnectionExtension> extensions =
+            new HashMap<Class<? extends ConnectionExtension>, ConnectionExtension>();
+
+    @ConfigurableProperty(
+            name = "dcmProtocol",
+            defaultValue = "DICOM",
+            label = "Protocol",
+            tags = Tag.PRIMARY
+    )
     private Protocol protocol = Protocol.DICOM;
-    private static final EnumMap<Protocol, ProtocolHandler> handlers =
-            new EnumMap<Protocol, ProtocolHandler>(Protocol.class);
+
+    private static final EnumMap<Protocol, TCPProtocolHandler> tcpHandlers =
+            new EnumMap<Protocol, TCPProtocolHandler>(Protocol.class);
+    private static final EnumMap<Protocol, UDPProtocolHandler> udpHandlers =
+            new EnumMap<Protocol, UDPProtocolHandler>(Protocol.class);
 
     private transient List<InetAddress> blacklistAddrs;
-    private transient volatile ServerSocket server;
+    private transient InetAddress hostAddr;
+    private transient InetAddress bindAddr;
+    private transient InetAddress clientBindAddr;
+    private transient volatile Listener listener;
     private transient boolean rebindNeeded;
-
+    
     static {
-        registerProtocolHandler(Protocol.DICOM, DicomProtocolHandler.INSTANCE);
+        registerTCPProtocolHandler(Protocol.DICOM, DicomProtocolHandler.INSTANCE);
     }
 
     public Connection() {
@@ -159,20 +250,50 @@ public class Connection implements Serializable {
         this.port = port;
     }
 
-    public static ProtocolHandler registerProtocolHandler(
-            Protocol protocol, ProtocolHandler handler) {
-        return handlers.put(protocol, handler);
+    /**
+     *
+     * @param commonName
+     * @param hostname
+     * @param port
+     * @param timeout value in seconds to assign to all timeouts
+     */
+    public Connection(String commonName, String hostname, int port, int timeout) {
+        this(commonName, hostname, port);
+
+        setConnectTimeout(timeout);
+        setRequestTimeout(timeout);
+        setAcceptTimeout(timeout);
+        setReleaseTimeout(timeout);
+        setResponseTimeout(timeout);
+        setRetrieveTimeout(timeout);
+        setIdleTimeout(timeout);
     }
 
-    public static ProtocolHandler unregisterProtocolHandler(
+
+    public static TCPProtocolHandler registerTCPProtocolHandler(
+            Protocol protocol, TCPProtocolHandler handler) {
+        return tcpHandlers.put(protocol, handler);
+    }
+
+    public static TCPProtocolHandler unregisterTCPProtocolHandler(
             Protocol protocol) {
-        return handlers.remove(protocol);
+        return tcpHandlers.remove(protocol);
+    }
+
+    public static UDPProtocolHandler registerUDPProtocolHandler(
+            Protocol protocol, UDPProtocolHandler handler) {
+        return udpHandlers.put(protocol, handler);
+    }
+
+    public static UDPProtocolHandler unregisterUDPProtocolHandler(
+            Protocol protocol) {
+        return udpHandlers.remove(protocol);
     }
 
     /**
      * Get the <code>Device</code> object that this Network Connection belongs
      * to.
-     * 
+     *
      * @return Device
      */
     public final Device getDevice() {
@@ -182,9 +303,8 @@ public class Connection implements Serializable {
     /**
      * Set the <code>Device</code> object that this Network Connection belongs
      * to.
-     * 
-     * @param device
-     *            The owning <code>Device</code> object.
+     *
+     * @param device The owning <code>Device</code> object.
      */
     final void setDevice(Device device) {
         if (device != null && this.device != null)
@@ -196,27 +316,106 @@ public class Connection implements Serializable {
      * This is the DNS name for this particular connection. This is used to
      * obtain the current IP address for connections. Hostname must be
      * sufficiently qualified to be unambiguous for any client DNS user.
-     * 
+     *
      * @return A String containing the host name.
      */
     public final String getHostname() {
         return hostname;
     }
 
+    public String getHttpProxyProviderName() {
+        return httpProxyProviderName;
+    }
+
+    public String getHttpProxyProviderVersion() {
+        return httpProxyProviderVersion;
+    }
+
     /**
      * This is the DNS name for this particular connection. This is used to
      * obtain the current IP address for connections. Hostname must be
      * sufficiently qualified to be unambiguous for any client DNS user.
-     * 
-     * @param hostname
-     *            A String containing the host name.
+     *
+     * @param hostname A String containing the host name.
      */
     public final void setHostname(String hostname) {
-        if (hostname != null ? hostname.equals(this.hostname) : this.hostname == null)
+        if (hostname != null
+                ? hostname.equals(this.hostname)
+                : this.hostname == null)
             return;
 
         this.hostname = hostname;
         needRebind();
+    }
+
+    /**
+     * Bind address of listening socket or {@code null}. If {@code null}, bind
+     * listening socket to {@link #getHostname()}. This is the default.
+     * <p>
+     * The bind address can also include system properties with the
+     * <em>${system.property}</em> syntax, that need to be resolved.
+     *
+     * @return Bind address of the connection or {@code null}
+     */
+    public final String getBindAddress() {
+        return bindAddress;
+    }
+
+    /**
+     * Bind address of listening socket or {@code null}. If {@code null}, bind
+     * listening socket to {@link #getHostname()}.
+     * <p>
+     * The bind address can also include system properties with the
+     * <em>${system.property}</em> syntax, that will be resolved.
+     *
+     * @param bindAddress
+     *            Bind address of listening socket or {@code null}
+     */
+    public final void setBindAddress(String bindAddress) {
+        if (bindAddress != null
+                ? bindAddress.equals(this.bindAddress)
+                : this.bindAddress == null)
+            return;
+
+        this.bindAddress = bindAddress;
+        this.bindAddr = null;
+        needRebind();
+    }
+
+    /**
+     * Bind address of outgoing connections, {@code "0.0.0.0"} or {@code null}.
+     * If {@code "0.0.0.0"} the system pick up any local ip for outgoing
+     * connections. If {@code null}, bind outgoing connections to
+     * {@link #getHostname()}. This is the default.
+     *
+     * @return Bind address of outgoing connection, {@code 0.0.0.0} or
+     *         {@code null}
+     */
+    public String getClientBindAddress() {
+        return clientBindAddress;
+    }
+
+
+    public ProxyManager getProxyManager() {
+         return ProxyService.getInstance().getProxyManager(this.httpProxyProviderName,this.httpProxyProviderVersion);
+        }
+
+    /**
+     * Bind address of outgoing connections, {@code "0.0.0.0"}  or {@code null}.
+     * If {@code "0.0.0.0"} the system pick up any local ip for outgoing
+     * connections. If {@code null}, bind outgoing connections to
+     * {@link #getHostname()}.
+     *
+     * @param bindAddress Bind address of outgoing connection or {@code null}
+     */
+    public void setClientBindAddress(String bindAddress) {
+        if (bindAddress != null
+                ? bindAddress.equals(this.clientBindAddress)
+                : this.clientBindAddress == null)
+            return;
+
+        this.clientBindAddress = bindAddress;
+        this.clientBindAddr = null;
     }
 
     public Protocol getProtocol() {
@@ -245,7 +444,7 @@ public class Connection implements Serializable {
     /**
      * An arbitrary name for the Network Connections object. Can be a meaningful
      * name or any unique sequence of characters.
-     * 
+     *
      * @return A String containing the name.
      */
     public final String getCommonName() {
@@ -255,9 +454,8 @@ public class Connection implements Serializable {
     /**
      * An arbitrary name for the Network Connections object. Can be a meaningful
      * name or any unique sequence of characters.
-     * 
-     * @param name
-     *            A String containing the name.
+     *
+     * @param name A String containing the name.
      */
     public final void setCommonName(String name) {
         this.commonName = name;
@@ -265,8 +463,8 @@ public class Connection implements Serializable {
 
     /**
      * The TCP port that the AE is listening on or <code>-1</code> for a
-     *          network connection that only initiates associations.
-     * 
+     * network connection that only initiates associations.
+     *
      * @return An int containing the port number or <code>-1</code>.
      */
     public final int getPort() {
@@ -275,12 +473,11 @@ public class Connection implements Serializable {
 
     /**
      * The TCP port that the AE is listening on or <code>0</code> for a
-     *          network connection that only initiates associations.
-     * 
+     * network connection that only initiates associations.
+     * <p>
      * A valid port value is between 0 and 65535.
-     * 
-     * @param port
-     *            The port number or <code>-1</code>.
+     *
+     * @param port The port number or <code>-1</code>.
      */
     public final void setPort(int port) {
         if (this.port == port)
@@ -291,6 +488,51 @@ public class Connection implements Serializable {
 
         this.port = port;
         needRebind();
+    }
+
+    public Map<Class<? extends ConnectionExtension>, ConnectionExtension> getExtensions() {
+        return extensions;
+    }
+
+    public void setExtensions(Map<Class<? extends ConnectionExtension>, ConnectionExtension> extensions) {
+        this.extensions = extensions;
+    }
+
+    public <T> T getExtension(Class<T> clazz) {
+        return (T) extensions.get(clazz);
+    }
+
+    public void addExtension(ConnectionExtension connectionExtension) {
+        connectionExtension.setConnection(this);
+        extensions.put(connectionExtension.getClass(), connectionExtension);
+    }
+
+    public void setHttpProxyProviderName(String httpProxyProviderName) {
+        this.httpProxyProviderName = httpProxyProviderName;
+    }
+
+    public void setHttpProxyProviderVersion(String httpProxyProviderVersion) {
+        this.httpProxyProviderVersion = httpProxyProviderVersion;
+    }
+
+    private void reconfigureExtensions(Connection from) {
+        for (Iterator<Class<? extends ConnectionExtension>> it =
+             extensions.keySet().iterator(); it.hasNext(); ) {
+            if (!from.extensions.containsKey(it.next()))
+                it.remove();
+        }
+        for (ConnectionExtension src : from.extensions.values()) {
+            Class<? extends ConnectionExtension> clazz = src.getClass();
+            ConnectionExtension ext = extensions.get(clazz);
+            if (ext == null)
+                try {
+                    addExtension(ext = clazz.newInstance());
+                } catch (Exception e) {
+                    throw new RuntimeException(
+                            "Failed to instantiate " + clazz.getName(), e);
+                }
+            ext.reconfigure(src);
+        }
     }
 
     public final String getHttpProxy() {
@@ -336,9 +578,8 @@ public class Connection implements Serializable {
 
     /**
      * Timeout in ms for receiving A-ASSOCIATE-RQ, 5000 by default
-     * 
-     * @param An
-     *            int value containing the milliseconds.
+     *
+     * @param An int value containing the milliseconds.
      */
     public final int getRequestTimeout() {
         return requestTimeout;
@@ -346,9 +587,8 @@ public class Connection implements Serializable {
 
     /**
      * Timeout in ms for receiving A-ASSOCIATE-RQ, 5000 by default
-     * 
-     * @param timeout
-     *            An int value containing the milliseconds.
+     *
+     * @param timeout An int value containing the milliseconds.
      */
     public final void setRequestTimeout(int timeout) {
         if (timeout < 0)
@@ -369,7 +609,7 @@ public class Connection implements Serializable {
 
     /**
      * Timeout in ms for receiving A-RELEASE-RP, 5000 by default.
-     * 
+     *
      * @return An int value containing the milliseconds.
      */
     public final int getReleaseTimeout() {
@@ -378,9 +618,8 @@ public class Connection implements Serializable {
 
     /**
      * Timeout in ms for receiving A-RELEASE-RP, 5000 by default.
-     * 
-     * @param timeout
-     *            An int value containing the milliseconds.
+     *
+     * @param timeout An int value containing the milliseconds.
      */
     public final void setReleaseTimeout(int timeout) {
         if (timeout < 0)
@@ -390,7 +629,7 @@ public class Connection implements Serializable {
 
     /**
      * Delay in ms for Socket close after sending A-ABORT, 50ms by default.
-     * 
+     *
      * @return An int value containing the milliseconds.
      */
     public final int getSocketCloseDelay() {
@@ -399,9 +638,8 @@ public class Connection implements Serializable {
 
     /**
      * Delay in ms for Socket close after sending A-ABORT, 50ms by default.
-     * 
-     * @param delay
-     *            An int value containing the milliseconds.
+     *
+     * @param delay An int value containing the milliseconds.
      */
     public final void setSocketCloseDelay(int delay) {
         if (delay < 0)
@@ -437,7 +675,7 @@ public class Connection implements Serializable {
      * The TLS CipherSuites that are supported on this particular connection.
      * TLS CipherSuites shall be described using an RFC-2246 string
      * representation (e.g. 'SSL_RSA_WITH_3DES_EDE_CBC_SHA')
-     * 
+     *
      * @return A String array containing the supported cipher suites
      */
     public String[] getTlsCipherSuites() {
@@ -448,9 +686,8 @@ public class Connection implements Serializable {
      * The TLS CipherSuites that are supported on this particular connection.
      * TLS CipherSuites shall be described using an RFC-2246 string
      * representation (e.g. 'SSL_RSA_WITH_3DES_EDE_CBC_SHA')
-     * 
-     * @param tlsCipherSuite
-     *            A String array containing the supported cipher suites
+     *
+     * @param tlsCipherSuite A String array containing the supported cipher suites
      */
     public void setTlsCipherSuites(String... tlsCipherSuites) {
         if (Arrays.equals(this.tlsCipherSuites, tlsCipherSuites))
@@ -490,7 +727,7 @@ public class Connection implements Serializable {
 
     /**
      * Get the SO_RCVBUF socket value in KB.
-     * 
+     *
      * @return An int value containing the buffer size in KB.
      */
     public final int getReceiveBufferSize() {
@@ -499,9 +736,8 @@ public class Connection implements Serializable {
 
     /**
      * Set the SO_RCVBUF socket option to specified value in KB.
-     * 
-     * @param bufferSize
-     *            An int value containing the buffer size in KB.
+     *
+     * @param bufferSize An int value containing the buffer size in KB.
      */
     public final void setReceiveBufferSize(int size) {
         if (size < 0)
@@ -511,7 +747,7 @@ public class Connection implements Serializable {
 
     /**
      * Get the SO_SNDBUF socket option value in KB,
-     * 
+     *
      * @return An int value containing the buffer size in KB.
      */
     public final int getSendBufferSize() {
@@ -520,9 +756,8 @@ public class Connection implements Serializable {
 
     /**
      * Set the SO_SNDBUF socket option to specified value in KB,
-     * 
-     * @param bufferSize
-     *            An int value containing the buffer size in KB.
+     *
+     * @param bufferSize An int value containing the buffer size in KB.
      */
     public final void setSendBufferSize(int size) {
         if (size < 0)
@@ -573,7 +808,7 @@ public class Connection implements Serializable {
     /**
      * Determine if this network connection is using Nagle's algorithm as part
      * of its network communication.
-     * 
+     *
      * @return boolean True if TCP no delay (disable Nagle's algorithm) is used.
      */
     public final boolean isTcpNoDelay() {
@@ -583,10 +818,9 @@ public class Connection implements Serializable {
     /**
      * Set whether or not this network connection should use Nagle's algorithm
      * as part of its network communication.
-     * 
-     * @param tcpNoDelay
-     *            boolean True if TCP no delay (disable Nagle's algorithm)
-     *            should be used.
+     *
+     * @param tcpNoDelay boolean True if TCP no delay (disable Nagle's algorithm)
+     *                   should be used.
      */
     public final void setTcpNoDelay(boolean tcpNoDelay) {
         this.tcpNoDelay = tcpNoDelay;
@@ -596,34 +830,33 @@ public class Connection implements Serializable {
      * True if the Network Connection is installed on the network. If not
      * present, information about the installed status of the Network Connection
      * is inherited from the device.
-     * 
+     *
      * @return boolean True if the NetworkConnection is installed on the
-     *         network.
+     * network.
      */
     public boolean isInstalled() {
-        return device != null && device.isInstalled() 
-                && (installed == null || installed.booleanValue());
+        return device != null && device.isInstalled()
+                && (connectionInstalled == null || connectionInstalled.booleanValue());
     }
 
-    public Boolean getInstalled() {
-        return installed;
+    public Boolean getConnectionInstalled() {
+        return connectionInstalled;
     }
 
     /**
      * True if the Network Connection is installed on the network. If not
      * present, information about the installed status of the Network Connection
      * is inherited from the device.
-     * 
-     * @param installed
-     *                True if the NetworkConnection is installed on the network.
-     * @throws GeneralSecurityException 
+     *
+     * @param installed True if the NetworkConnection is installed on the network.
+     * @throws GeneralSecurityException
      */
-    public void setInstalled(Boolean installed) {
-        if (this.installed == installed)
+    public void setConnectionInstalled(Boolean installed) {
+        if (this.connectionInstalled == installed)
             return;
 
         boolean prev = isInstalled();
-        this.installed = installed;
+        this.connectionInstalled = installed;
         if (isInstalled() != prev)
             needRebind();
     }
@@ -638,7 +871,7 @@ public class Connection implements Serializable {
      * Useful in an environment that utilizes a load balancer. In the case of a
      * TCP ping from a load balancing switch, we don't want to spin off a new
      * thread and try to negotiate an association.
-     * 
+     *
      * @return Returns the list of IP addresses which should be ignored.
      */
     public final String[] getBlacklist() {
@@ -650,9 +883,8 @@ public class Connection implements Serializable {
      * Useful in an environment that utilizes a load balancer. In the case of a
      * TCP ping from a load balancing switch, we don't want to spin off a new
      * thread and try to negotiate an association.
-     * 
-     * @param blacklist
-     *            the list of IP addresses which should be ignored.
+     *
+     * @param blacklist the list of IP addresses which should be ignored.
      */
     public final void setBlacklist(String[] blacklist) {
         this.blacklist = blacklist;
@@ -667,14 +899,14 @@ public class Connection implements Serializable {
     public StringBuilder promptTo(StringBuilder sb, String indent) {
         String indent2 = indent + "  ";
         StringUtils.appendLine(sb, indent, "Connection[cn: ", commonName);
-        StringUtils.appendLine(sb, indent2,"host: ", hostname);
-        StringUtils.appendLine(sb, indent2,"port: ", port);
-        StringUtils.appendLine(sb, indent2,"ciphers: ", Arrays.toString(tlsCipherSuites));
-        StringUtils.appendLine(sb, indent2,"installed: ", getInstalled());
+        StringUtils.appendLine(sb, indent2, "host: ", hostname);
+        StringUtils.appendLine(sb, indent2, "port: ", port);
+        StringUtils.appendLine(sb, indent2, "ciphers: ", Arrays.toString(tlsCipherSuites));
+        StringUtils.appendLine(sb, indent2, "installed: ", getConnectionInstalled());
         return sb.append(indent).append(']');
     }
 
-    private void setSocketSendOptions(Socket s) throws SocketException {
+    void setSocketSendOptions(Socket s) throws SocketException {
         int size = s.getSendBufferSize();
         if (sendBufferSize == 0) {
             sendBufferSize = size;
@@ -697,7 +929,7 @@ public class Connection implements Serializable {
         }
     }
 
-    private void setReceiveBufferSize(ServerSocket ss) throws SocketException {
+    void setReceiveBufferSize(ServerSocket ss) throws SocketException {
         int size = ss.getReceiveBufferSize();
         if (receiveBufferSize == 0) {
             receiveBufferSize = size;
@@ -707,8 +939,43 @@ public class Connection implements Serializable {
         }
     }
 
-    private InetAddress addr() throws UnknownHostException {
-        return hostname != null ? InetAddress.getByName(hostname) : null;
+    public void setReceiveBufferSize(DatagramSocket ds) throws SocketException {
+        int size = ds.getReceiveBufferSize();
+        if (receiveBufferSize == 0) {
+            receiveBufferSize = size;
+        } else if (receiveBufferSize != size) {
+            ds.setReceiveBufferSize(receiveBufferSize);
+            receiveBufferSize = ds.getReceiveBufferSize();
+        }
+    }
+
+    private InetAddress hostAddr() throws UnknownHostException {
+        if (hostAddr == null && hostname != null)
+            hostAddr = InetAddress.getByName(hostname);
+
+        return hostAddr;
+    }
+
+    private InetAddress bindAddr() throws UnknownHostException {
+        if (bindAddress == null)
+            return hostAddr();
+
+        if (bindAddr == null) {
+            String resolvedBindAddress = StringUtils.replaceSystemProperties(bindAddress);
+            bindAddr = InetAddress.getByName(resolvedBindAddress);
+        }
+
+        return bindAddr;
+    }
+
+    private InetAddress clientBindAddr() throws UnknownHostException {
+        if (clientBindAddress == null)
+            return hostAddr();
+
+        if (clientBindAddr == null)
+            clientBindAddr = InetAddress.getByName(clientBindAddress);
+
+        return clientBindAddr;
     }
 
     private List<InetAddress> blacklistAddrs() {
@@ -726,20 +993,15 @@ public class Connection implements Serializable {
 
 
     public InetSocketAddress getEndPoint() throws UnknownHostException {
-        return new InetSocketAddress(addr(), port);
+        return new InetSocketAddress(hostAddr(), port);
     }
 
-    /**
-     * Returns server socket associated with this Network Connection, bound to
-     * the TCP port, listening for connect requests. Returns <code>null</code>
-     * if this network connection only initiates associations or was not yet
-     * bound by {@link #bind}.
-     * 
-     * @return server socket associated with this Network Connection or
-     *         <code>null</code>
-     */
-    public ServerSocket getServer() {
-        return server;
+    public InetSocketAddress getBindPoint() throws UnknownHostException {
+        return new InetSocketAddress(bindAddr(), port);
+    }
+
+    public InetSocketAddress getClientBindPoint() throws UnknownHostException {
+        return new InetSocketAddress(clientBindAddr(), 0);
     }
 
     private void checkInstalled() {
@@ -755,10 +1017,9 @@ public class Connection implements Serializable {
     /**
      * Bind this network connection to a TCP port and start a server socket
      * accept loop.
-     * 
-     * @throws IOException
-     *             If there is a problem with the network interaction.
-     * @throws GeneralSecurityException 
+     *
+     * @throws IOException              If there is a problem with the network interaction.
+     * @throws GeneralSecurityException
      */
     public synchronized boolean bind() throws IOException, GeneralSecurityException {
         if (!(isInstalled() && isServer())) {
@@ -768,71 +1029,35 @@ public class Connection implements Serializable {
         if (device == null)
             throw new IllegalStateException("Not attached to Device");
         if (isListening())
-            throw new IllegalStateException("Already listening - " + server);
-        final ProtocolHandler connectionHandler = handlers.get(protocol);
-        if (connectionHandler == null)
-            throw new IllegalStateException("No ConnectionHandler for protocol " + protocol);
-        server = isTls() ? createTLSServerSocket() : new ServerSocket();
-        setReceiveBufferSize(server);
-        server.bind(getEndPoint(), backlog);
-        device.execute(new Runnable() {
-
-            public void run() {
-                ServerSocket tmp = server;
-                SocketAddress sockAddr = tmp.getLocalSocketAddress();
-                LOG.info("Start listening on {}", sockAddr);
-                try {
-                    for (;;) {
-                        LOG.debug("Wait for connection on {}", sockAddr);
-                        Socket s = server.accept();
-                        if (isBlackListed(s.getInetAddress())) {
-                            LOG.info("Reject connection {}", s);
-                            close(s);
-                        } else {
-                            LOG.info("Accept connection {}", s);
-                            try {
-                                setSocketSendOptions(s);
-                                connectionHandler.onAccept(Connection.this, s);
-                            } catch (Throwable e) {
-                                LOG.warn("Exception on accepted connection " + s + ":", e);
-                                close(s);
-                            }
-                        }
-                    }
-                } catch (Throwable e) {
-                    if (server == tmp) // ignore exception caused by unbind()
-                        LOG.error("Exception on listing on " + sockAddr + ":", e);
-                }
-                LOG.info("Stop listening on {}", sockAddr);
-            }
-        });
+            throw new IllegalStateException("Already listening - " + listener);
+        if (protocol.isTCP()) {
+            TCPProtocolHandler handler = tcpHandlers.get(protocol);
+            if (handler == null)
+                throw new IllegalStateException("No TCP Protocol Handler for protocol " + protocol);
+            listener = new TCPListener(this, handler);
+        } else {
+            UDPProtocolHandler handler = udpHandlers.get(protocol);
+            if (handler == null)
+                throw new IllegalStateException("No UDP Protocol Handler for protocol " + protocol);
+            listener = new UDPListener(this, handler);
+        }
         rebindNeeded = false;
         return true;
     }
 
     public final boolean isListening() {
-        return server != null;
+        return listener != null;
     }
 
-    private ServerSocket createTLSServerSocket() throws IOException, GeneralSecurityException {
-        SSLContext sslContext = device.sslContext();
-        SSLServerSocketFactory ssf = sslContext.getServerSocketFactory();
-        SSLServerSocket ss = (SSLServerSocket) ssf.createServerSocket();
-        ss.setEnabledProtocols(tlsProtocols);
-        ss.setEnabledCipherSuites(tlsCipherSuites);
-        ss.setNeedClientAuth(tlsNeedClientAuth);
-        return ss;
-    }
-
-    private boolean isBlackListed(InetAddress ia) {
+    public boolean isBlackListed(InetAddress ia) {
         return blacklistAddrs().contains(ia);
     }
 
     public synchronized void unbind() {
-        ServerSocket tmp = server;
+        Closeable tmp = listener;
         if (tmp == null)
             return;
-        server = null;
+        listener = null;
         try {
             tmp.close();
         } catch (Throwable e) {
@@ -846,49 +1071,57 @@ public class Connection implements Serializable {
         if (!protocol.isTCP())
             throw new IllegalStateException("Not a TCP Connection");
         checkCompatible(remoteConn);
-        InetSocketAddress bindPoint = getBindPoint();
+        SocketAddress bindPoint = getClientBindPoint();
         String remoteHostname = remoteConn.getHostname();
         int remotePort = remoteConn.getPort();
         LOG.info("Initiate connection from {} to {}:{}",
-                new Object[] {bindPoint, remoteHostname, remotePort});
+                bindPoint, remoteHostname, remotePort);
         Socket s = new Socket();
-        s.bind(bindPoint);
-        setReceiveBufferSize(s);
-        setSocketSendOptions(s);
-        String remoteProxy = remoteConn.getHttpProxy();
-        if (remoteProxy != null) {
-            String userauth = null;
-            String[] ss = StringUtils.split(remoteProxy, '@');
-            if (ss.length > 1) {
-                userauth = ss[0];
-                remoteProxy = ss[1];
+        ConnectionMonitor monitor = device != null
+                ? device.getConnectionMonitor()
+                : null;
+        try {
+            s.bind(bindPoint);
+            setReceiveBufferSize(s);
+            setSocketSendOptions(s);
+            String remoteProxy = remoteConn.getHttpProxy();
+            if (remoteProxy != null) {
+                String userauth = null;
+                String[] ss = StringUtils.split(remoteProxy, '@');
+                if (ss.length > 1) {
+                    userauth = ss[0];
+                    remoteProxy = ss[1];
+                }
+                ss = StringUtils.split(remoteProxy, ':');
+                int proxyPort = ss.length > 1 ? Integer.parseInt(ss[1]) : 8080;
+                s.connect(new InetSocketAddress(ss[0], proxyPort), connectTimeout);
+                try {
+                    getProxyManager().doProxyHandshake(s, remoteHostname, remotePort, userauth,
+                            connectTimeout);
+                } catch (IOException e) {
+                    SafeClose.close(s);
+                    throw e;
+                }
+            } else {
+                s.connect(remoteConn.getEndPoint(), connectTimeout);
             }
-            ss = StringUtils.split(remoteProxy, ':');
-            int proxyPort = ss.length > 1 ? Integer.parseInt(ss[1]) : 8080;
-            s.connect(new InetSocketAddress(ss[0], proxyPort), connectTimeout);
-            try {
-                doProxyHandshake(s, remoteHostname, remotePort, userauth,
-                        connectTimeout);
-            } catch (IOException e) {
-                SafeClose.close(s);
-                throw e;
-            }
-        } else {
-            s.connect(new InetSocketAddress(remoteHostname, remotePort),
-                    connectTimeout);
-        }
-        if (isTls())
-            try {
+            if (isTls())
                 s = createTLSSocket(s, remoteConn);
-            } catch (GeneralSecurityException e) {
-                SafeClose.close(s);
-                throw e;
-            } catch (IOException e) {
-                SafeClose.close(s);
-                throw e;
-            }
-        LOG.info("Established connection {}", s);
-        return s;
+            if (monitor != null)
+                monitor.onConnectionEstablished(this, remoteConn, s);
+            LOG.info("Established connection {}", s);
+            return s;
+        } catch (GeneralSecurityException e) {
+            if (monitor != null)
+                monitor.onConnectionFailed(this, remoteConn, s, e);
+            SafeClose.close(s);
+            throw e;
+        } catch (IOException e) {
+            if (monitor != null)
+                monitor.onConnectionFailed(this, remoteConn, s, e);
+            SafeClose.close(s);
+            throw e;
+        }
     }
 
     public DatagramSocket createDatagramSocket() throws IOException {
@@ -896,7 +1129,7 @@ public class Connection implements Serializable {
         if (protocol.isTCP())
             throw new IllegalStateException("Not a UDP Connection");
 
-        DatagramSocket ds = new DatagramSocket(getBindPoint());
+        DatagramSocket ds = new DatagramSocket(getClientBindPoint());
         int size = ds.getSendBufferSize();
         if (sendBufferSize == 0) {
             sendBufferSize = size;
@@ -907,64 +1140,68 @@ public class Connection implements Serializable {
         return ds;
     }
 
-    private void doProxyHandshake(Socket s, String hostname, int port,
-            String userauth, int connectTimeout) throws IOException {
-
-        StringBuilder request = new StringBuilder(128);
-        request.append("CONNECT ")
-          .append(hostname).append(':').append(port)
-          .append(" HTTP/1.1\r\nHost: ")
-          .append(hostname).append(':').append(port);
-        if (userauth != null) {
-           byte[] b = userauth.getBytes("UTF-8");
-           char[] base64 = new char[(b.length + 2) / 3 * 4];
-           Base64.encode(b, 0, b.length, base64, 0);
-           request.append("\r\nProxy-Authorization: basic ")
-               .append(base64);
-        }
-        request.append("\r\n\r\n");
-        OutputStream out = s.getOutputStream();
-        out.write(request.toString().getBytes("US-ASCII"));
-        out.flush();
-
-        s.setSoTimeout(connectTimeout);
-        @SuppressWarnings("resource")
-        String response = new HTTPResponse(s).toString();
-        s.setSoTimeout(0);
-        if (!response.startsWith("HTTP/1.1 2"))
-            throw new IOException("Unable to tunnel through " + s
-                    + ". Proxy returns \"" + response + '\"');
+    public Listener getListener() {
+        return listener;
     }
 
-    private static class HTTPResponse extends ByteArrayOutputStream {
-
-        private final String rsp;
-
-        public HTTPResponse(Socket s) throws IOException {
-            super(64);
-            InputStream in = s.getInputStream();
-            boolean eol = false;
-            int b;
-            while ((b = in.read()) != -1) {
-                write(b);
-                if (b == '\n') {
-                    if (eol) {
-                        rsp = new String(super.buf, 0, super.count, "US-ASCII");
-                        return;
-                    }
-                    eol = true;
-                } else if (b != '\r') {
-                    eol = false;
-                }
-            }
-            throw new IOException("Unexpected EOF from " + s);
-        }
-
-        @Override
-        public String toString() {
-            return rsp;
-        }
-    }
+//    private void doProxyHandshake(Socket s, String hostname, int port,
+//                                  String userauth, int connectTimeout) throws IOException {
+//
+//        StringBuilder request = new StringBuilder(128);
+//        request.append("CONNECT ")
+//                .append(hostname).append(':').append(port)
+//                .append(" HTTP/1.1\r\nHost: ")
+//                .append(hostname).append(':').append(port);
+//        if (userauth != null) {
+//            byte[] b = userauth.getBytes("UTF-8");
+//            char[] base64 = new char[(b.length + 2) / 3 * 4];
+//            Base64.encode(b, 0, b.length, base64, 0);
+//            request.append("\r\nProxy-Authorization: basic ")
+//                    .append(base64);
+//        }
+//        request.append("\r\n\r\n");
+//        OutputStream out = s.getOutputStream();
+//        out.write(request.toString().getBytes("US-ASCII"));
+//        out.flush();
+//
+//        s.setSoTimeout(connectTimeout);
+//        @SuppressWarnings("resource")
+//        String response = new HTTPResponse(s).toString();
+//        s.setSoTimeout(0);
+//        if (!response.startsWith("HTTP/1.1 2"))
+//            throw new IOException("Unable to tunnel through " + s
+//                    + ". Proxy returns \"" + response + '\"');
+//    }
+//
+//    private static class HTTPResponse extends ByteArrayOutputStream {
+//
+//        private final String rsp;
+//
+//        public HTTPResponse(Socket s) throws IOException {
+//            super(64);
+//            InputStream in = s.getInputStream();
+//            boolean eol = false;
+//            int b;
+//            while ((b = in.read()) != -1) {
+//                write(b);
+//                if (b == '\n') {
+//                    if (eol) {
+//                        rsp = new String(super.buf, 0, super.count, "US-ASCII");
+//                        return;
+//                    }
+//                    eol = true;
+//                } else if (b != '\r') {
+//                    eol = false;
+//                }
+//            }
+//            throw new IOException("Unexpected EOF from " + s);
+//        }
+//
+//        @Override
+//        public String toString() {
+//            return rsp;
+//        }
+//    }
 
     private SSLSocket createTLSSocket(Socket s, Connection remoteConn)
             throws GeneralSecurityException, IOException {
@@ -988,18 +1225,18 @@ public class Connection implements Serializable {
     public boolean isCompatible(Connection remoteConn) {
         if (remoteConn.protocol != protocol)
             return false;
-        
+
         if (!protocol.isTCP())
             return true;
-        
+
         if (!isTls())
             return !remoteConn.isTls();
-        
+
         return hasCommon(remoteConn.tlsProtocols, tlsProtocols)
-            && hasCommon(remoteConn.tlsCipherSuites, tlsCipherSuites);
+                && hasCommon(remoteConn.tlsCipherSuites, tlsCipherSuites);
     }
 
-    private boolean hasCommon(String[] ss1,  String[] ss2) {
+    private boolean hasCommon(String[] ss1, String[] ss2) {
         for (String s1 : ss1)
             for (String s2 : ss2)
                 if (s1.equals(s2))
@@ -1015,7 +1252,8 @@ public class Connection implements Serializable {
                 if (s1.equals(s2)) {
                     ss[len++] = s1;
                     break;
-                };
+                }
+        ;
         if (len == ss.length)
             return ss;
 
@@ -1024,29 +1262,21 @@ public class Connection implements Serializable {
         return dest;
     }
 
-    private InetSocketAddress getBindPoint() throws UnknownHostException {
-        // don't use loopback address as bind point to avoid
-        // ConnectionException connection to remote endpoint
-        return new InetSocketAddress(maskLoopBackAddress(addr()), 0);
-    }
-
-    private static InetAddress maskLoopBackAddress(InetAddress addr) {
-        return addr != null && addr.isLoopbackAddress() ? null : addr;
-    }
-
     boolean equalsRDN(Connection other) {
         return commonName != null
                 ? commonName.equals(other.commonName)
                 : other.commonName == null
-                    && hostname.equals(other.hostname)
-                    && port == other.port
-                    && protocol == other.protocol;
+                && hostname.equals(other.hostname)
+                && port == other.port
+                && protocol == other.protocol;
     }
 
     void reconfigure(Connection from) {
         setCommonName(from.commonName);
         setHostname(from.hostname);
         setPort(from.port);
+        setBindAddress(from.bindAddress);
+        setClientBindAddress(from.clientBindAddress);
         setProtocol(from.protocol);
         setHttpProxy(from.httpProxy);
         setBacklog(from.backlog);
@@ -1070,7 +1300,8 @@ public class Connection implements Serializable {
         setTlsCipherSuites(from.tlsCipherSuites);
         setTlsProtocols(from.tlsProtocols);
         setBlacklist(from.blacklist);
-        setInstalled(from.installed);
+        setConnectionInstalled(from.connectionInstalled);
+        reconfigureExtensions(from);
     }
 
 }

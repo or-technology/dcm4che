@@ -41,67 +41,21 @@ package org.dcm4che3.data;
 import java.util.Date;
 import java.util.TimeZone;
 
-import org.dcm4che3.io.SAXWriter;
 import org.dcm4che3.util.StringUtils;
-import org.xml.sax.SAXException;
 
 /**
  * @author Gunter Zeilinger <gunterze@gmail.com>
  */
 enum StringValueType implements ValueType {
-    ASCII("\\", null),
-    STRING("\\", null){
-
-        @Override
-        public boolean useSpecificCharacterSet() {
-            return true;
-        }
-
-        @Override
-        protected SpecificCharacterSet cs(SpecificCharacterSet cs) {
-            return cs;
-        }
-    },
-    TEXT("\n\f\r", null) {
-
-        @Override
-        public boolean useSpecificCharacterSet() {
-            return true;
-        }
-
-        @Override
-        protected SpecificCharacterSet cs(SpecificCharacterSet cs) {
-            return cs;
-        }
-
-        @Override
-        protected Object splitAndTrim(String s) {
-            return StringUtils.trimTrailing(s);
-        }
-    },
-    DA("\\", TemporalType.DA),
-    DT("\\", TemporalType.DT),
-    TM("\\", TemporalType.TM),
-    PN("^=\\", null){
-
-        @Override
-        public boolean useSpecificCharacterSet() {
-            return true;
-        }
-
-        @Override
-        protected SpecificCharacterSet cs(SpecificCharacterSet cs) {
-            return cs;
-        }
-
-        @Override
-        protected void toXML(int i, String s, SAXWriter saxWriter)
-                throws SAXException {
-            if (s != null)
-                saxWriter.writePersonName(i, new PersonName(s, true));
-        }
-    },
-    DS("\\", null) {
+    ASCII(false, true, null, null),
+    STRING(true, true, "\\", null),
+    TEXT(true, false, "\n\f\r", null),
+    UR(false, false, null, null),
+    DA(false, true, null, TemporalType.DA),
+    DT(false, true, null, TemporalType.DT),
+    TM(false, true, null, TemporalType.TM),
+    PN(true, true, "^=\\", null),
+    DS(false, true, null, null) {
 
         @Override
         public byte[] toBytes(Object val, SpecificCharacterSet cs) {
@@ -207,7 +161,7 @@ enum StringValueType implements ValueType {
             return super.prompt(val, bigEndian, cs, maxChars, sb);
         }
     },
-    IS("\\", null) {
+    IS(false, true, null, null) {
 
         @Override
         public boolean isIntValue() {
@@ -287,10 +241,15 @@ enum StringValueType implements ValueType {
         }
     };
 
+    final boolean useSpecificCharacterSet;
+    final boolean multipleValues;
     final String delimiters;
     final TemporalType temporalType; 
 
-    StringValueType(String delimiters, TemporalType temperalType) {
+    StringValueType(boolean useSpecificCharacterSet, boolean multipleValues,
+                    String delimiters, TemporalType temperalType) {
+        this.useSpecificCharacterSet = useSpecificCharacterSet;
+        this.multipleValues = multipleValues;
         this.delimiters = delimiters;
         this.temporalType = temperalType;
    }
@@ -322,11 +281,11 @@ enum StringValueType implements ValueType {
 
     @Override
     public boolean useSpecificCharacterSet() {
-        return false;
+        return useSpecificCharacterSet;
     }
 
-    protected SpecificCharacterSet cs(SpecificCharacterSet cs) {
-        return SpecificCharacterSet.DEFAULT;
+    private SpecificCharacterSet cs(SpecificCharacterSet cs) {
+        return useSpecificCharacterSet ? cs : SpecificCharacterSet.DEFAULT;
     }
 
     @Override
@@ -354,7 +313,7 @@ enum StringValueType implements ValueType {
 
         if (val instanceof String[]) {
             String[] ss = (String[]) val;
-            return (valueIndex < ss.length && !ss[valueIndex].isEmpty())
+            return (valueIndex < ss.length && ss[valueIndex] != null && !ss[valueIndex].isEmpty())
                     ? ss[valueIndex]
                     : defVal;
         }
@@ -367,7 +326,8 @@ enum StringValueType implements ValueType {
             SpecificCharacterSet cs) {
 
         if (val instanceof byte[]) {
-            return splitAndTrim(cs(cs).decode((byte[]) val));
+            String s = cs(cs).decode((byte[]) val);
+            return multipleValues ? StringUtils.splitAndTrim(s, '\\') : StringUtils.trimTrailing(s);
         }
 
         if (val instanceof String
@@ -376,10 +336,6 @@ enum StringValueType implements ValueType {
 
         throw new UnsupportedOperationException();
     } 
-
-    protected Object splitAndTrim(String s) {
-        return StringUtils.splitAndTrim(s, '\\');
-    }
 
     @Override
     public int toInt(Object val, boolean bigEndian, int valueIndex,
@@ -557,26 +513,6 @@ enum StringValueType implements ValueType {
         }
         sb.setLength(sb.length()-1);
         return true;
-    }
-
-    @Override
-    public void toXML(Object val, boolean bigEndian, SpecificCharacterSet cs,
-            SAXWriter saxWriter, boolean inlineBinary) throws SAXException {
-        if (inlineBinary)
-            throw new IllegalArgumentException("inlineBinary=true");
-        Object o = toStrings(val, bigEndian, cs);
-        if (o instanceof String[]) {
-            String[] ss = (String[]) o;
-            for (int i = 0; i < ss.length; i++)
-                toXML(i, ss[i], saxWriter);
-        } else
-            toXML(0, (String) o, saxWriter);
-    }
-
-    protected void toXML(int i, String s, SAXWriter saxWriter)
-            throws SAXException {
-        if (s != null)
-            saxWriter.writeValue(i, s);
     }
 
     @Override

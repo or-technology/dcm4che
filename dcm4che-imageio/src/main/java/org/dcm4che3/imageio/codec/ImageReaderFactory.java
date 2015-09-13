@@ -38,45 +38,63 @@
 
 package org.dcm4che3.imageio.codec;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.ServiceLoader;
 import java.util.Map.Entry;
 import java.util.Properties;
-import java.util.Set;
+import java.util.TreeMap;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
-import javax.imageio.ImageWriter;
-import javax.imageio.spi.ImageReaderSpi;
-import javax.imageio.spi.ImageWriterSpi;
 
+import org.dcm4che3.conf.core.api.ConfigurableClass;
+import org.dcm4che3.conf.core.api.ConfigurableProperty;
+import org.dcm4che3.conf.core.api.LDAP;
+import org.dcm4che3.data.UID;
 import org.dcm4che3.imageio.codec.jpeg.PatchJPEGLS;
+import org.dcm4che3.util.ResourceLocator;
 import org.dcm4che3.util.SafeClose;
 import org.dcm4che3.util.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * @author Gunter Zeilinger <gunterze@gmail.com>
+ * Provides Image Readers for different DICOM transfer syntaxes and MIME types.
  * 
+ * @author Gunter Zeilinger <gunterze@gmail.com>
+ * @author Hermann Czedik-Eysenberg <hermann-agfa@czedik.net>
  */
+@LDAP(objectClasses = "dcmImageReaderFactory")
+@ConfigurableClass
 public class ImageReaderFactory implements Serializable {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ImageReaderFactory.class);
 
     private static final long serialVersionUID = -2881173333124498212L;
 
+    @LDAP(objectClasses = "dcmImageReader")
+    @ConfigurableClass
     public static class ImageReaderParam implements Serializable {
 
         private static final long serialVersionUID = 6593724836340684578L;
 
-        public final String formatName;
-        public final String className;
-        public final PatchJPEGLS patchJPEGLS;
+        @ConfigurableProperty(name = "dcmIIOFormatName")
+        public String formatName;
+
+        @ConfigurableProperty(name = "dcmJavaClassName")
+        public String className;
+
+        @ConfigurableProperty(name = "dcmPatchJPEGLS")
+        public PatchJPEGLS patchJPEGLS;
+
+        public ImageReaderParam() {
+        }
 
         public ImageReaderParam(String formatName, String className,
                 String patchJPEGLS) {
@@ -86,6 +104,29 @@ public class ImageReaderFactory implements Serializable {
                     .valueOf(patchJPEGLS) : null;
         }
 
+        public String getFormatName() {
+            return formatName;
+        }
+
+        public void setFormatName(String formatName) {
+            this.formatName = formatName;
+        }
+
+        public String getClassName() {
+            return className;
+        }
+
+        public void setClassName(String className) {
+            this.className = className;
+        }
+
+        public PatchJPEGLS getPatchJPEGLS() {
+            return patchJPEGLS;
+        }
+
+        public void setPatchJPEGLS(PatchJPEGLS patchJPEGLS) {
+            this.patchJPEGLS = patchJPEGLS;
+        }
     }
 
     private static String nullify(String s) {
@@ -93,7 +134,37 @@ public class ImageReaderFactory implements Serializable {
     }
 
     private static ImageReaderFactory defaultFactory;
-    private final HashMap<String, ImageReaderParam> map = new HashMap<String, ImageReaderParam>();
+
+    @LDAP(distinguishingField = "dicomTransferSyntax", noContainerNode = true)
+    @ConfigurableProperty(
+            name="dicomImageReaderMap",
+            label = "Image Readers by Transfer Syntax",
+            description = "Image readers by Transfer Syntax"
+    )
+    private Map<String, ImageReaderParam> mapTransferSyntaxUIDs = new TreeMap<String, ImageReaderParam>();
+    
+    @ConfigurableProperty(
+            name="dicomImageReaderMapMime",
+            label = "Image Readers by MIME type",
+            description = "Image readers by MIME type"
+    )
+    private Map<String, ImageReaderParam> mapMimeTypes = new TreeMap<String, ImageReaderParam>();
+
+    public Map<String, ImageReaderParam> getMapTransferSyntaxUIDs() {
+        return mapTransferSyntaxUIDs;
+    }
+
+    public void setMapTransferSyntaxUIDs(Map<String, ImageReaderParam> mapTransferSyntaxUIDs) {
+        this.mapTransferSyntaxUIDs = mapTransferSyntaxUIDs;
+    }
+
+    public Map<String, ImageReaderParam> getMapMimeTypes() {
+        return mapMimeTypes;
+    }
+
+    public void setMapMimeTypes(Map<String, ImageReaderParam> mapMimeTypes) {
+        this.mapMimeTypes = mapMimeTypes;
+    }
 
     public static ImageReaderFactory getDefault() {
         if (defaultFactory == null)
@@ -124,7 +195,38 @@ public class ImageReaderFactory implements Serializable {
                     "Failed to load Image Reader Factory configuration from: "
                             + name, e);
         }
+
+        factory.init();
+
         return factory;
+    }
+
+    public void init() {
+        if (LOG.isInfoEnabled()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("Image Readers:\n");
+            for (Entry<String, ImageReaderParam> entry : mapTransferSyntaxUIDs.entrySet()) {
+                String tsUid = entry.getKey();
+                sb.append(' ').append(tsUid);
+                sb.append(" (").append(UID.nameOf(tsUid)).append("): ");
+                sb.append(getImageReaderName(entry.getValue())).append('\n');
+            }
+            for (Entry<String, ImageReaderParam> entry : mapMimeTypes.entrySet()) {
+                sb.append(' ').append(entry.getKey()).append(": ");
+                sb.append(getImageReaderName(entry.getValue())).append('\n');
+            }
+            LOG.info(sb.toString());
+        }
+    }
+
+    private String getImageReaderName(ImageReaderParam imageReaderParam) {
+        ImageReader imageReader = null;
+        try {
+            imageReader = getImageReader(imageReaderParam);
+        } catch (RuntimeException e) {
+            // none found
+        }
+        return imageReader != null ? imageReader.getClass().getName() : "null";
     }
 
     public void load(String name) throws IOException {
@@ -132,9 +234,15 @@ public class ImageReaderFactory implements Serializable {
         try {
             url = new URL(name);
         } catch (MalformedURLException e) {
-            url = StringUtils.getResourceURL(name, this.getClass());
-            if (url == null)
-                throw new IOException("No such resource: " + name);
+            url = ResourceLocator.getResourceURL(name, this.getClass());
+            if (url == null) {
+                File f = new File(name);
+                if(f.exists() && f.isFile()) {
+                    url = f.toURI().toURL();
+                } else {
+                    throw new IOException("No such resource: " + name);
+                }
+            }
         }
         InputStream in = url.openStream();
         try {
@@ -148,96 +256,69 @@ public class ImageReaderFactory implements Serializable {
         Properties props = new Properties();
         props.load(in);
         for (Map.Entry<Object, Object> entry : props.entrySet()) {
+            String key = (String) entry.getKey();
+
             String[] ss = StringUtils.split((String) entry.getValue(), ':');
-            map.put((String) entry.getKey(), new ImageReaderParam(ss[0], ss[1],
-                    ss[2]));
+            String formatName = ss[0];
+            String className = ss[1];
+            String patchJPEGLS = ss[2];
+
+            if (key.contains("/")) { // mime type
+                mapMimeTypes.put(key, new ImageReaderParam(formatName, className, patchJPEGLS));
+            } else { // transfer syntax uid
+                mapTransferSyntaxUIDs.put(key, new ImageReaderParam(formatName, className, patchJPEGLS));
+            }
         }
     }
 
-    public ImageReaderParam get(String tsuid) {
-        return map.get(tsuid);
+    private ImageReaderParam getForTransferSyntaxUID(String tsuid) {
+        return mapTransferSyntaxUIDs.get(tsuid);
     }
 
-    public boolean contains(String tsuid) {
-        return map.containsKey(tsuid);
+    private ImageReaderParam getForMimeType(String mimeType) {
+        return mapMimeTypes.get(mimeType);
     }
 
-    public ImageReaderParam put(String tsuid, ImageReaderParam param) {
-        return map.put(tsuid, param);
-    }
-
-    public ImageReaderParam remove(String tsuid) {
-        return map.remove(tsuid);
-    }
-
-    public Set<Entry<String, ImageReaderParam>> getEntries() {
-        return Collections.unmodifiableMap(map).entrySet();
-    }
-
-    public void clear() {
-        map.clear();
+    private boolean containsTransferSyntaxUID(String tsuid) {
+        return mapTransferSyntaxUIDs.containsKey(tsuid);
     }
 
     public static ImageReaderParam getImageReaderParam(String tsuid) {
-        return getDefault().get(tsuid);
+        return getDefault().getForTransferSyntaxUID(tsuid);
     }
 
     public static boolean canDecompress(String tsuid) {
-        return getDefault().contains(tsuid);
+        return getDefault().containsTransferSyntaxUID(tsuid);
     }
 
     public static ImageReader getImageReader(ImageReaderParam param) {
 
-        // ImageReaderSpi are laoded through the java ServiceLoader,
-        // istead of imageio ServiceRegistry
-        Iterator<ImageReaderSpi> iter = ServiceLoader
-                .load(ImageReaderSpi.class).iterator();
+        Iterator<ImageReader> readers = ImageIO.getImageReadersByFormatName(param.formatName);
 
-        try {
+        while (readers.hasNext()) {
+            ImageReader reader = readers.next();
 
-            if (iter != null && iter.hasNext()) {
-
-                String className = param.className;
-                if (className == null)
-                    return iter.next().createReaderInstance();
-
-                do {
-                    ImageReaderSpi readerspi = iter.next();
-                    if (supportsFormat(readerspi.getFormatNames(),
-                            param.formatName)) {
-
-                        ImageReader reader = readerspi.createReaderInstance();
-
-                        if (reader.getClass().getName().equals(className))
-                            return reader;
-                    }
-                } while (iter.hasNext());
+            if (param.className == null || param.className.equals(reader.getClass().getName())) {
+                LOG.debug("Using Image Reader {}", reader.getClass());
+                return reader;
             }
-
-            throw new RuntimeException("No Image Reader for format: "
-                    + param.formatName + " registered");
-
-        } catch (IOException e) {
-            throw new RuntimeException(
-                    "Error instantiating Reader for format: "
-                            + param.formatName);
         }
+
+        throw new RuntimeException("No matching Image Reader for format: " + param.formatName + " (Class: " + ((param.className == null) ? "*" : param.className) + ") registered");
     }
 
-    private static boolean supportsFormat(String[] supportedFormats,
-            String format) {
-        boolean supported = false;
+    public static ImageReader getImageReaderForMimeType(String mimeType) {
+        ImageReaderParam imageReaderParam = getDefault().getForMimeType(mimeType);
 
-        if (format != null && supportedFormats != null) {
-
-            for (int i = 0; i < supportedFormats.length; i++)
-                if (supportedFormats[i] != null
-                        && supportedFormats[i].trim().equalsIgnoreCase(
-                                format.trim()))
-                    supported = true;
+        if (imageReaderParam != null) {
+            // configured mime type
+            return getImageReader(imageReaderParam);
+        } else {
+            // not configured mime type, fallback to first ImageIO reader for this mime type
+            ImageReader reader = ImageIO.getImageReadersByMIMEType(mimeType).next();
+            LOG.debug("Using Image Reader {}", reader.getClass());
+            return reader;
         }
-
-        return supported;
     }
 
 }

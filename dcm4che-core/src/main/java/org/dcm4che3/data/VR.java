@@ -41,10 +41,8 @@ package org.dcm4che3.data;
 import java.util.Date;
 import java.util.TimeZone;
 
-import org.dcm4che3.io.SAXWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.xml.sax.SAXException;
 
 /**
  * @author Gunter Zeilinger <gunterze@gmail.com>
@@ -63,6 +61,7 @@ public enum VR {
     LO(0x4c4f, 8, ' ', StringValueType.STRING, false),
     LT(0x4c54, 8, ' ', StringValueType.TEXT, false),
     OB(0x4f42, 12, 0, BinaryValueType.BYTE, true),
+    OD(0x4f44, 12, 0, BinaryValueType.DOUBLE, true),
     OF(0x4f46, 12, 0, BinaryValueType.FLOAT, true),
     OW(0x4f57, 12, 0, BinaryValueType.SHORT, true),
     PN(0x504e, 8, ' ', StringValueType.PN, false),
@@ -72,9 +71,11 @@ public enum VR {
     SS(0x5353, 8, 0, BinaryValueType.SHORT, false),
     ST(0x5354, 8, ' ', StringValueType.TEXT, false),
     TM(0x544d, 8, ' ', StringValueType.TM, false),
+    UC(0x5543, 12, ' ', StringValueType.STRING, false),
     UI(0x5549, 8, 0, StringValueType.ASCII, false),
     UL(0x554c, 8, 0, BinaryValueType.INT, false),
     UN(0x554e, 12, 0, BinaryValueType.BYTE, true),
+    UR(0x5552, 12, ' ', StringValueType.UR, false),
     US(0x5553, 8, 0, BinaryValueType.USHORT, false),
     UT(0x5554, 12, ' ', StringValueType.TEXT, false);
 
@@ -95,40 +96,20 @@ public enum VR {
         this.inlineBinary = inlineBinary;
     }
 
-    private static final VR[] VALUE_OF = new VR[0x5554 - 0x4145 + 1];
+    private static int indexOf(int code) {
+        int code1 = code - 0x4141;
+        return (code1 & 0xffffe0e0) == 0 ? ((code1 & 0xff00) >> 3) + (code1 & 0xff) : -1;
+    }
+
+    private static final VR[] VALUE_OF = new VR[indexOf(UT.code)+1];
     static {
-        VALUE_OF[0x4145 - 0x4145] = AE;
-        VALUE_OF[0x4153 - 0x4145] = AS;
-        VALUE_OF[0x4154 - 0x4145] = AT;
-        VALUE_OF[0x4353 - 0x4145] = CS;
-        VALUE_OF[0x4441 - 0x4145] = DA;
-        VALUE_OF[0x4453 - 0x4145] = DS;
-        VALUE_OF[0x4454 - 0x4145] = DT;
-        VALUE_OF[0x4644 - 0x4145] = FD;
-        VALUE_OF[0x464c - 0x4145] = FL;
-        VALUE_OF[0x4953 - 0x4145] = IS;
-        VALUE_OF[0x4c4f - 0x4145] = LO;
-        VALUE_OF[0x4c54 - 0x4145] = LT;
-        VALUE_OF[0x4f42 - 0x4145] = OB;
-        VALUE_OF[0x4f46 - 0x4145] = OF;
-        VALUE_OF[0x4f57 - 0x4145] = OW;
-        VALUE_OF[0x504e - 0x4145] = PN;
-        VALUE_OF[0x5348 - 0x4145] = SH;
-        VALUE_OF[0x534c - 0x4145] = SL;
-        VALUE_OF[0x5351 - 0x4145] = SQ;
-        VALUE_OF[0x5353 - 0x4145] = SS;
-        VALUE_OF[0x5354 - 0x4145] = ST;
-        VALUE_OF[0x544d - 0x4145] = TM;
-        VALUE_OF[0x5549 - 0x4145] = UI;
-        VALUE_OF[0x554c - 0x4145] = UL;
-        VALUE_OF[0x554e - 0x4145] = UN;
-        VALUE_OF[0x5553 - 0x4145] = US;
-        VALUE_OF[0x5554 - 0x4145] = UT;
+        for (VR vr : VR.values())
+            VALUE_OF[indexOf(vr.code)] = vr;
     }
 
     public static VR valueOf(int code) {
         try {
-            VR vr = VALUE_OF[code - 0x4145];
+            VR vr = VALUE_OF[indexOf(code)];
             if (vr != null)
                 return vr;
         } catch (IndexOutOfBoundsException e) {}
@@ -181,37 +162,37 @@ public enum VR {
         return valueType.toBytes(val, cs);
     }
 
-    Object toStrings(Object val, boolean bigEndian, SpecificCharacterSet cs) {
+    public Object toStrings(Object val, boolean bigEndian, SpecificCharacterSet cs) {
         return valueType.toStrings(val, bigEndian, cs);
     }
 
-    String toString(Object val, boolean bigEndian, int valueIndex,
+    public String toString(Object val, boolean bigEndian, int valueIndex,
             String defVal) {
         return valueType.toString(val, bigEndian, valueIndex, defVal);
     }
 
-    int toInt(Object val, boolean bigEndian, int valueIndex, int defVal) {
+    public int toInt(Object val, boolean bigEndian, int valueIndex, int defVal) {
         return valueType.toInt(val, bigEndian, valueIndex, defVal);
     }
 
-    int[] toInts(Object val, boolean bigEndian) {
+    public int[] toInts(Object val, boolean bigEndian) {
         return valueType.toInts(val, bigEndian);
     }
 
-    float toFloat(Object  val, boolean bigEndian, int valueIndex, float defVal) {
+    public float toFloat(Object  val, boolean bigEndian, int valueIndex, float defVal) {
         return valueType.toFloat(val, bigEndian, valueIndex, defVal);
     }
 
-    float[] toFloats(Object val, boolean bigEndian) {
+    public float[] toFloats(Object val, boolean bigEndian) {
         return valueType.toFloats(val, bigEndian);
     }
 
-    double toDouble(Object val, boolean bigEndian, int valueIndex,
+    public double toDouble(Object val, boolean bigEndian, int valueIndex,
             double defVal) {
         return valueType.toDouble(val, bigEndian, valueIndex, defVal);
     }
 
-    double[] toDoubles(Object val, boolean bigEndian) {
+    public double[] toDoubles(Object val, boolean bigEndian) {
         return valueType.toDoubles(val, bigEndian);
     }
 
@@ -256,11 +237,6 @@ public enum VR {
     public boolean prompt(Object val, boolean bigEndian,
             SpecificCharacterSet cs, int maxChars, StringBuilder sb) {
         return valueType.prompt(val, bigEndian, cs, maxChars, sb);
-    }
-
-    public void toXML(Object val, boolean bigEndian,
-            SpecificCharacterSet cs, SAXWriter saxWriter) throws SAXException {
-        valueType.toXML(val, bigEndian, cs, saxWriter, inlineBinary);
     }
 
     public int vmOf(Object val) {

@@ -16,7 +16,7 @@
  *
  * The Initial Developer of the Original Code is
  * Agfa Healthcare.
- * Portions created by the Initial Developer are Copyright (C) 2011
+ * Portions created by the Initial Developer are Copyright (C) 2015
  * the Initial Developer. All Rights Reserved.
  *
  * Contributor(s):
@@ -35,67 +35,127 @@
  * the terms of any one of the MPL, the GPL or the LGPL.
  *
  * ***** END LICENSE BLOCK ***** */
-
 package org.dcm4che3.conf.api;
 
-import java.io.Closeable;
-import java.security.cert.X509Certificate;
-
+import org.dcm4che3.conf.core.api.ConfigurationException;
 import org.dcm4che3.net.ApplicationEntity;
 import org.dcm4che3.net.Device;
-import org.dcm4che3.net.DeviceInfo;
 
 /**
- * @author Gunter Zeilinger <gunterze@gmail.com>
+ * This interface should be used by vendors/integrators to access and manipulate the DICOM configuration in a type-safe way.
+ * Always give the preference to this interface when possible.
  *
+ * @author Gunter Zeilinger <gunterze@gmail.com>
+ * @author Roman K
  */
-public interface DicomConfiguration extends Closeable {
+public interface DicomConfiguration {
 
-    boolean configurationExists() throws ConfigurationException;
-
-    boolean purgeConfiguration() throws ConfigurationException;
-
-    boolean registerAETitle(String aet) throws ConfigurationException;
-
-    void unregisterAETitle(String aet) throws ConfigurationException;
-
+    /**
+     * Looks up an application entity by name
+     * @param aet application entity name
+     * @return
+     * @throws org.dcm4che3.conf.core.api.ConfigurationException
+     */
     ApplicationEntity findApplicationEntity(String aet) throws ConfigurationException;
 
+    /**
+     * Looks up an application entity by UUID
+     * @param uuid UUID
+     * @return
+     * @throws org.dcm4che3.conf.core.api.ConfigurationException
+     */
+    ApplicationEntity findApplicationEntityByUUID(String uuid) throws ConfigurationException;
+
+    /**
+     * DO NOT USE IT YET - not supported.
+     *
+     * Looks up a device by UUID
+     * @param uuid UUID
+     * @return
+     * @throws org.dcm4che3.conf.core.api.ConfigurationException
+     */
+    Device findDeviceByUUID(String uuid) throws ConfigurationException;
+
+    /**
+     * Looks up a device by name
+     * @param name device name
+     * @return
+     * @throws org.dcm4che3.conf.core.api.ConfigurationException
+     */
     Device findDevice(String name) throws ConfigurationException;
 
     /**
-     * Query for Devices with specified attributes.
-     * 
-     * @param keys
-     *            Device attributes which shall match or <code>null</code> to
-     *            get information for all configured Devices
-     * @return array of <code>DeviceInfo</code> objects for configured Devices
-     *         with matching attributes
-     * @throws ConfigurationException
+     * Stores the full configuration of a device in the configuration backend.
+     * @param device Device to store
+     * @throws ConfigurationAlreadyExistsException When a device with such name already exists.
+     * @throws ConfigurationException When an error occured during the operation
      */
-    DeviceInfo[] listDeviceInfos(DeviceInfo keys) throws ConfigurationException;
-
-    String[] listDeviceNames() throws ConfigurationException;
-
-    String[] listRegisteredAETitles() throws ConfigurationException;
-
     void persist(Device device) throws ConfigurationException;
 
+    /**
+     * Replaces the full configuration of a device in the configuration backend with the configuration of
+     * the provided device. The behavior is similar to JPA's merge.
+     * @param device Device to merge
+     * @throws ConfigurationException When an error occured during the operation
+     */
     void merge(Device device) throws ConfigurationException;
 
+    /**
+     * Removes the device and its configuration from the configuration storage fully.
+     * @param name
+     * @throws ConfigurationException
+     */
     void removeDevice(String name) throws ConfigurationException;
 
-    String deviceRef(String name);
+    /**
+     * Returns all device names from the configuration backend
+     * @return Device names
+     * @throws ConfigurationException
+     */
+    String[] listDeviceNames() throws ConfigurationException;
 
-    void persistCertificates(String ref, X509Certificate... certs) throws ConfigurationException;
-
-    void removeCertificates(String ref) throws ConfigurationException;
-
-    X509Certificate[] findCertificates(String dn) throws ConfigurationException;
-
-    void close();
-
+    /**
+     * Invalidates any present cached state for the configuration storage view of the client.
+     * There is no guarantee whether the devices accessed afterwards will be re-loaded lazily or eagerly.
+     *
+     * Has no effect for non-cached or consistently-cached configuration storage backends.
+     */
     void sync() throws ConfigurationException;
 
+
+    /**
+     * Get an extension of configuration
+     * @param clazz Extension class
+     * @param <T>
+     * @throws IllegalArgumentException - in case an extension of specified class is nto found
+     * @return
+     */
     <T> T getDicomConfigurationExtension(Class<T> clazz);
+    
+    /**
+     * Provides support for batching configuration changes.
+     * </p>
+     * The method implementation must ensure that the batch-changes are executed within a transaction.
+     * The implementation may decide to run the changes either in 
+     * <ul>
+     * <li>the context of an already existing transaction</li>
+     * <li>the context of a new transaction</li>
+     * </ul>
+     * 
+     * @param dicomConfigBatch Configuration batch change to execute
+     */
+    void runBatch(DicomConfigBatch dicomConfigBatch);
+    
+    /**
+     * Defines a configuration batch that allows to execute configuration changes in a bulk-type manner.
+     * 
+     * @author Alexander Hoermandinger <alexander.hoermandinger@agfa.com>
+     */
+    interface DicomConfigBatch {
+        /**
+         * Executes configuration batch changes on the specified DICOM configuration.
+         */
+        void run();
+    }
+    
 }

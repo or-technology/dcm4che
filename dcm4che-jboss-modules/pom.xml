@@ -1,16 +1,16 @@
-<project
-  xmlns="http://maven.apache.org/POM/4.0.0"
-  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
     <groupId>org.dcm4che</groupId>
     <artifactId>dcm4che-parent</artifactId>
-    <version>3.3.0-SNAPSHOT</version>
+    <version>3.3.8-SNAPSHOT</version>
   </parent>
   <artifactId>dcm4che-jboss-modules</artifactId>
   <packaging>pom</packaging>
   <name>dcm4che-jboss-modules</name>
+  <properties>
+    <pegasus.module.dependency/>
+  </properties>
   <dependencies>
     <dependency>
       <groupId>org.dcm4che</groupId>
@@ -24,47 +24,22 @@
     </dependency>
     <dependency>
       <groupId>org.dcm4che</groupId>
+      <artifactId>dcm4che-conf-core</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.dcm4che</groupId>
+      <artifactId>dcm4che-conf-dicom</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.dcm4che</groupId>
+      <artifactId>dcm4che-conf-core-api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.dcm4che</groupId>
       <artifactId>dcm4che-conf-api-hl7</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.dcm4che</groupId>
-      <artifactId>dcm4che-conf-ldap</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.dcm4che</groupId>
-      <artifactId>dcm4che-conf-ldap-audit</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.dcm4che</groupId>
-      <artifactId>dcm4che-conf-ldap-hl7</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.dcm4che</groupId>
-      <artifactId>dcm4che-conf-ldap-imageio</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.dcm4che</groupId>
-      <artifactId>dcm4che-conf-prefs</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.dcm4che</groupId>
-      <artifactId>dcm4che-conf-prefs-audit</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.dcm4che</groupId>
-      <artifactId>dcm4che-conf-prefs-hl7</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.dcm4che</groupId>
-      <artifactId>dcm4che-conf-prefs-imageio</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
@@ -74,7 +49,17 @@
     </dependency>
     <dependency>
       <groupId>org.dcm4che</groupId>
+      <artifactId>dcm4che-dict-private</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.dcm4che</groupId>
       <artifactId>dcm4che-emf</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.dcm4che</groupId>
+      <artifactId>dcm4che-filecache</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
@@ -95,6 +80,11 @@
     <dependency>
       <groupId>org.dcm4che</groupId>
       <artifactId>dcm4che-imageio-rle</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.dcm4che</groupId>
+      <artifactId>dcm4che-json</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
@@ -140,6 +130,24 @@
         <version>2.3</version>
         <executions>
           <execution>
+            <id>${project.name}-bundles-assembly</id>
+            <phase>package</phase>
+            <goals>
+              <goal>single</goal>
+            </goals>
+            <configuration>
+              <descriptors>
+                <descriptor>src/main/assembly/bundles.xml</descriptor>
+              </descriptors>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>2.3</version>
+        <executions>
+          <execution>
             <id>${project.name}-modules-assembly</id>
             <phase>package</phase>
             <goals>
@@ -152,23 +160,61 @@
                 <descriptor>src/main/assembly/modules.xml</descriptor>
               </descriptors>
             </configuration>
-          </execution>          
-          <execution>
-            <id>${project.name}-bundles-assembly</id>
-            <phase>package</phase>
-            <goals>
-              <goal>single</goal>
-            </goals>
-            <configuration>
-              <appendAssemblyId>false</appendAssemblyId>
-              <finalName>dcm4che-jboss-bundles-${project.version}</finalName>
-              <descriptors>
-                <descriptor>src/main/assembly/bundles.xml</descriptor>
-              </descriptors>
-            </configuration>
-          </execution>          
+          </execution>
         </executions>
       </plugin>
     </plugins>
   </build>
+  <profiles>
+
+    <!-- Profile to create adapted JBoss modules for CSP build
+    which might contain modules with adapted dependencies, etc.-->
+    <profile>
+      <id>csp</id>
+      <properties>
+        <pegasus.module.dependency>
+          &lt;module name="pegasus" slot="agility" services="export" export="true"/&gt;
+        </pegasus.module.dependency>
+      </properties>
+    </profile>
+
+    <profile>
+      <id>copy-modules-to-jboss</id>
+      <activation>
+        <property>
+          <name>jboss.dir</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <executions>
+
+              <!-- Copies jboss modules to the specified jboss folder -->
+              <execution>
+                <phase>install</phase>
+                <id>unzip-dcm4che-jboss-modules</id>
+                <configuration>
+                  <tasks>
+                    <unzip dest="${jboss.dir}" overwrite="true">
+
+                      <fileset dir="target">
+                        <include name="*.zip" />
+                        <exclude name="*-bundles.zip" />
+                      </fileset>
+
+                    </unzip>
+                  </tasks>
+                </configuration>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

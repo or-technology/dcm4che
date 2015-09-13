@@ -71,6 +71,29 @@ public class MediaTypes {
             new MediaType("application", "dicom+xml");
 
     /**
+     * "image/gif"
+     */
+    public final static String IMAGE_GIF = "image/gif";
+
+    /**
+     * "image/gif"
+     */
+    public final static MediaType IMAGE_GIF_TYPE =
+            new MediaType("image", "gif");
+
+
+    /**
+     * "image/png"
+     */
+    public final static String IMAGE_PNG = "image/png";
+
+    /**
+     * "image/png"
+     */
+    public final static MediaType IMAGE_PNG_TYPE =
+            new MediaType("image", "png");
+
+    /**
      * "image/jpeg"
      */
     public final static String IMAGE_JPEG = "image/jpeg";
@@ -170,6 +193,17 @@ public class MediaTypes {
             new MediaType("application", "pdf");
 
     /**
+     * "text/rtf"
+     */
+    public final static String TEXT_RTF = "text/rtf";
+
+    /**
+     * "text/rtf"
+     */
+    public final static MediaType TEXT_RTF_TYPE =
+            new MediaType("text", "rtf");
+
+    /**
      * "application/zip"
      */
     public final static String APPLICATION_ZIP = "application/zip";
@@ -222,7 +256,7 @@ public class MediaTypes {
         else if (UID.JPEG2000.equals(ts))
             s = IMAGE_DICOM_JPEG_JP2;
         else if (UID.JPEG2000Part2MultiComponent.equals(ts))
-            s = IMAGE_DICOM_JPEG_JP2;
+            s = IMAGE_DICOM_JPEG_JPX;
         else if (UID.MPEG2.equals(ts)
                 || UID.MPEG2MainProfileHighLevel.equals(ts))
             s = VIDEO_MPEG;

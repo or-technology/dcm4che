@@ -66,21 +66,14 @@ import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
+import org.dcm4che3.data.Attributes;
 import org.dcm4che3.data.Tag;
 import org.dcm4che3.data.UID;
-import org.dcm4che3.data.Attributes;
 import org.dcm4che3.data.VR;
 import org.dcm4che3.io.DicomInputStream;
 import org.dcm4che3.io.DicomOutputStream;
 import org.dcm4che3.io.SAXWriter;
-import org.dcm4che3.net.ApplicationEntity;
-import org.dcm4che3.net.Association;
-import org.dcm4che3.net.Connection;
-import org.dcm4che3.net.Device;
-import org.dcm4che3.net.DimseRSPHandler;
-import org.dcm4che3.net.IncompatibleConnectionException;
-import org.dcm4che3.net.QueryOption;
-import org.dcm4che3.net.Status;
+import org.dcm4che3.net.*;
 import org.dcm4che3.net.pdu.AAssociateRQ;
 import org.dcm4che3.net.pdu.ExtendedNegotiation;
 import org.dcm4che3.net.pdu.PresentationContext;
@@ -88,12 +81,18 @@ import org.dcm4che3.tool.common.CLIUtils;
 import org.dcm4che3.util.SafeClose;
 
 /**
+ * The findscu application implements a Service Class User (SCU) for the
+ * Query/Retrieve, the Modality Worklist Management, the Unified Worklist and
+ * Procedure Step, the Hanging Protocol Query/Retrieve and the Color Palette
+ * Query/Retrieve Service Class. findscu only supports query functionality using
+ * the C-FIND message. It sends query keys to an Service Class Provider (SCP)
+ * and waits for responses.
+ * 
  * @author Gunter Zeilinger <gunterze@gmail.com>
- *
  */
 public class FindSCU {
 
-    private static enum InformationModel {
+    public static enum InformationModel {
         PatientRoot(UID.PatientRootQueryRetrieveInformationModelFIND, "STUDY"),
         StudyRoot(UID.StudyRootQueryRetrieveInformationModelFIND, "STUDY"),
         PatientStudyOnly(UID.PatientStudyOnlyQueryRetrieveInformationModelFINDRetired, "STUDY"),
@@ -117,14 +116,18 @@ public class FindSCU {
                 queryOptions.add(QueryOption.DATETIME);
             }
         }
+
+        public String getCuid() {
+            return cuid;
+        }
     }
 
     private static ResourceBundle rb =
         ResourceBundle.getBundle("org.dcm4che3.tool.findscu.messages");
     private static SAXTransformerFactory saxtf;
 
-    private final Device device = new Device("findscu");
-    private final ApplicationEntity ae = new ApplicationEntity("FINDSCU");
+    private Device device = new Device("findscu");
+    private ApplicationEntity ae = new ApplicationEntity("FINDSCU");
     private final Connection conn = new Connection();
     private final Connection remote = new Connection();
     private final AAssociateRQ rq = new AAssociateRQ();
@@ -135,7 +138,7 @@ public class FindSCU {
     private File outDir;
     private DecimalFormat outFileFormat;
     private int[] inFilter;
-    private Attributes keys = new Attributes();
+    private final Attributes keys = new Attributes();
 
     private boolean catOut = false;
     private boolean xml = false;
@@ -147,14 +150,18 @@ public class FindSCU {
     private OutputStream out;
 
     private Association as;
-    private AtomicInteger totNumMatches = new AtomicInteger();
+    private final AtomicInteger totNumMatches = new AtomicInteger();
 
     public FindSCU() throws IOException {
         device.addConnection(conn);
         device.addApplicationEntity(ae);
         ae.addConnection(conn);
     }
+    public FindSCU(ApplicationEntity appEntity) throws IOException {
+        this.ae = appEntity;
+        this.device = this.ae.getDevice();
 
+    }
     public final void setPriority(int priority) {
         this.priority = priority;
     }
@@ -314,6 +321,30 @@ public class FindSCU {
         opts.addOption(null, "xmlns", false, rb.getString("xmlns"));
         opts.addOption(null, "out-cat", false, rb.getString("out-cat"));
     }
+    
+    public ApplicationEntity getApplicationEntity() {
+        return ae;
+    }
+
+    public Connection getRemoteConnection() {
+        return remote;
+    }
+    
+    public AAssociateRQ getAAssociateRQ() {
+        return rq;
+    }
+    
+    public Association getAssociation() {
+        return as;
+    }
+
+    public Device getDevice() {
+        return device;
+    }    
+    
+    public Attributes getKeys() {
+        return keys;
+    }
 
     @SuppressWarnings("unchecked")
     public static void main(String[] args) {
@@ -422,7 +453,7 @@ public class FindSCU {
 
     public void open() throws IOException, InterruptedException,
             IncompatibleConnectionException, GeneralSecurityException {
-        as = ae.connect(conn, remote, rq);
+        as = ae.connect(remote, rq);
     }
 
     public void close() throws IOException, InterruptedException {
@@ -438,7 +469,8 @@ public class FindSCU {
         Attributes attrs;
         DicomInputStream dis = null;
         try {
-            attrs = new DicomInputStream(f).readDataset(-1, -1);
+            dis = new DicomInputStream(f);
+            attrs = dis.readDataset(-1, -1);
             if (inFilter != null) {
                 attrs = new Attributes(inFilter.length + 1);
                 attrs.addSelected(attrs, inFilter);
@@ -450,10 +482,11 @@ public class FindSCU {
         query(attrs);
     }
 
+    
    public void query() throws IOException, InterruptedException {
         query(keys);
     }
-
+   
     private void query(Attributes keys) throws IOException, InterruptedException {
          DimseRSPHandler rspHandler = new DimseRSPHandler(as.nextMessageID()) {
 
@@ -479,9 +512,17 @@ public class FindSCU {
             }
         };
 
-        as.cfind(model.cuid, priority, keys, null, rspHandler);
+        query(keys, rspHandler);
     }
 
+    public void query( DimseRSPHandler rspHandler) throws IOException, InterruptedException {
+        query(keys, rspHandler);
+    }
+    
+    private void query(Attributes keys, DimseRSPHandler rspHandler) throws IOException, InterruptedException {
+        as.cfind(model.cuid, priority, keys, null, rspHandler);
+    }
+    
     private void onResult(Attributes data) {
         int numMatches = totNumMatches.incrementAndGet();
         if (outDir == null) 
@@ -539,9 +580,11 @@ public class FindSCU {
             return tf.newTransformerHandler();
 
         Templates tpls = xsltTpls;
-        if (tpls == null);
+        if (tpls == null)
             xsltTpls = tpls = tf.newTemplates(new StreamSource(xsltFile));
 
         return tf.newTransformerHandler(tpls);
     }
+
+
 }

@@ -41,9 +41,6 @@ package org.dcm4che3.data;
 import java.util.Date;
 import java.util.TimeZone;
 
-import org.dcm4che3.io.SAXWriter;
-import org.xml.sax.SAXException;
-
 /**
  * @author Gunter Zeilinger <gunterze@gmail.com>
  */
@@ -102,9 +99,6 @@ interface ValueType {
 
     boolean prompt(Object val, boolean bigEndian, SpecificCharacterSet cs,
             int maxChars, StringBuilder sb);
-
-    void toXML(Object val, boolean bigEndian, SpecificCharacterSet cs,
-            SAXWriter saxWriter, boolean inlineBinary) throws SAXException;
 
     int vmOf(Object val);
 }

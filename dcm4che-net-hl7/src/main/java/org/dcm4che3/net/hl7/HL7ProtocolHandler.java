@@ -47,13 +47,13 @@ import org.dcm4che3.hl7.HL7Message;
 import org.dcm4che3.hl7.HL7Segment;
 import org.dcm4che3.hl7.MLLPConnection;
 import org.dcm4che3.net.Connection;
-import org.dcm4che3.net.ProtocolHandler;
+import org.dcm4che3.net.TCPProtocolHandler;
 
 /**
  * @author Gunter Zeilinger <gunterze@gmail.com>
  *
  */
-enum HL7ProtocolHandler implements ProtocolHandler {
+enum HL7ProtocolHandler implements TCPProtocolHandler {
     INSTANCE;
 
     @Override

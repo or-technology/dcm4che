@@ -102,12 +102,14 @@ public class Association {
     private final HashMap<String,HashMap<String,PresentationContext>> pcMap =
             new HashMap<String,HashMap<String,PresentationContext>>();
 
-     Association(ApplicationEntity ae, Connection local, Socket sock)
+    Association(ApplicationEntity ae, Connection local, Socket sock)
             throws IOException {
         this.serialNo = prevSerialNo.incrementAndGet();
         this.ae = ae;
         this.requestor = ae != null;
-        this.name = "Association" + delim() + serialNo;
+        this.name = "" + sock.getLocalSocketAddress()
+             + delim() + sock.getRemoteSocketAddress()
+             + '(' + serialNo + ')';
         this.conn = local;
         this.device = local.getDevice();
         this.sock = sock;
@@ -123,12 +125,16 @@ public class Association {
         activate();
     }
 
+    public Device getDevice() {
+         return device;
+    }
+
     public int nextMessageID() {
         return messageID.incrementAndGet() & 0xFFFF;
     }
 
-    private char delim() {
-        return requestor ? '-' : '+';
+    private String delim() {
+        return requestor ? "->" : "<-";
     }
 
     @Override
@@ -403,7 +409,7 @@ public class Association {
     }
 
     void write(AAssociateRQ rq) throws IOException {
-        name = rq.getCalledAET() + delim() + serialNo;
+        name = rq.getCallingAET() + delim() + rq.getCalledAET() + '(' + serialNo + ')';
         this.rq = rq;
         LOG.info("{} << A-ASSOCIATE-RQ", name);
         LOG.debug("{}", rq);
@@ -503,6 +509,7 @@ public class Association {
     }
 
     void onAAssociateRQ(AAssociateRQ rq) throws IOException {
+        name = rq.getCalledAET() + delim() + rq.getCallingAET() + '(' + serialNo + ')';
         LOG.info("{} >> A-ASSOCIATE-RQ", name);
         LOG.debug("{}", rq);
         stopTimeout();
@@ -511,7 +518,6 @@ public class Association {
 
     void handle(AAssociateRQ rq) throws IOException {
         this.rq = rq;
-        name = rq.getCallingAET() + delim() + serialNo;
         enterState(State.Sta3);
         try {
             ae = device.getApplicationEntity(rq.getCalledAET());
@@ -1197,8 +1203,8 @@ public class Association {
         checkException();
         rspHandler.setPC(pc);
         addDimseRSPHandler(rspHandler);
-        encoder.writeDIMSE(pc, cmd, data);
         startTimeout(rspHandler.getMessageID(), rspTimeout);
+        encoder.writeDIMSE(pc, cmd, data);
     }
 
     static int minZeroAsMax(int i1, int i2) {
