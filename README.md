@@ -9,7 +9,7 @@
 Advantages of the native readers:
 * Allows to return BufferedImage or RenderedImage (from readAsRenderedImage()).
 * Do not extract an image file from DICOM as most additional decoders, read directly from stream segments.
-* Handle a [unique configuration file](https://github.com/nroduit/dcm4che/blob/dcm4che-native-codec/dcm4che-imageio/src/main/resources/org/dcm4che/imageio/codec/ImageReaderFactory.xml) for all the systems.  
+* Handle a [unique configuration file](https://github.com/nroduit/dcm4che/blob/dcm4che-native-codec/dcm4che-imageio/src/main/resources/org/dcm4che3/imageio/codec/ImageReaderFactory.xml) for all the systems.  
 	Can be overwritten by a Java property: jnlp.weasis.org.dcm4che3.imageio.codec.ImageReaderFactory="http://server/context/ImageReaderFactory.xml"
 
 Fix issues of Sun codecs:
