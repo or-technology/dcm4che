@@ -59,6 +59,7 @@ import java.util.Properties;
 /**
  * @author Roman K
  */
+@SuppressWarnings("unchecked")
 public class UpgradeRunner {
 
     public static final String RUN_ALWAYS = "org.dcm4che.conf.upgrade.runAlways";
@@ -88,10 +89,9 @@ public class UpgradeRunner {
 
         String toVersion = upgradeSettings.getUpgradeToVersion();
         if (toVersion != null) {
-            log.info("Dcm4che configuration init: upgrading configuration to version " + toVersion);
             upgradeToVersion(toVersion);
         } else
-            log.warn("Dcm4che configuration init: upgrade version is null");
+            log.warn("Dcm4che configuration init: target upgrade version is null. Upgrade will not be performed. Set the target config version in upgrade settings first.'");
 
     }
 
@@ -108,6 +108,7 @@ public class UpgradeRunner {
 
                     BeanVitalizer beanVitalizer = new DefaultBeanVitalizer();
 
+                    // load or initialize config metadata
                     Object metadataNode = configuration.getConfigurationNode(METADATA_ROOT_PATH, ConfigurationMetadata.class);
                     ConfigurationMetadata configMetadata = null;
                     if (metadataNode != null)
@@ -118,19 +119,10 @@ public class UpgradeRunner {
                     }
                     String fromVersion = configMetadata.getVersion();
 
+                    log.info("Dcm4che configuration init: upgrading configuration from version '{}' to version '{}'", fromVersion, toVersion);
+
                     Properties props = new Properties();
                     props.putAll(upgradeSettings.getProperties());
-
-                    if (props.getProperty(RUN_ALWAYS) == null) {
-                        // check if we need to run scripts at all
-                        if (fromVersion.compareToIgnoreCase(toVersion) >= 0) {
-                            log.info("Skipping configuration upgrade - configuration version is already " + toVersion);
-                            return;
-                        }
-                    } else {
-                        log.warn("org.dcm4che.conf.upgrade.runAlways is set to TRUE, all the upgrade scripts will be re-executed unconditionally. " +
-                                "This is NOT supposed to be used in production and may introduce inconsistencies in a clustered setup.");
-                    }
 
                     log.info("Config upgrade scripts specified in settings: {}", upgradeSettings.getUpgradeScriptsToRun());
                     log.info("Config upgrade scripts discovered in the deployment: {}", availableUpgradeScripts);
@@ -141,8 +133,8 @@ public class UpgradeRunner {
                         boolean found = false;
 
                         for (UpgradeScript script : availableUpgradeScripts) {
-                            if (script.getClass().getName().equals(upgradeScriptName)) {
-                                log.info("Executing upgrade script {}", upgradeScriptName);
+                            if (script.getClass().getName().startsWith(upgradeScriptName)) {
+                                found = true;
 
                                 // fetch upgradescript metadata
                                 UpgradeScript.UpgradeScriptMetadata upgradeScriptMetadata = configMetadata.getMetadataOfUpgradeScripts().get(upgradeScriptName);
@@ -151,8 +143,36 @@ public class UpgradeRunner {
                                     configMetadata.getMetadataOfUpgradeScripts().put(upgradeScriptName, upgradeScriptMetadata);
                                 }
 
+
+                                // check if the script need to be executed
+                                ScriptVersion currentScriptVersionAnno = script.getClass().getAnnotation(ScriptVersion.class);
+
+                                String currentscriptVersion;
+                                if (currentScriptVersionAnno == null) {
+                                    currentscriptVersion = UpgradeScript.NO_VERSION;
+                                    log.warn("Upgrade script '{}' does not have @ScriptVersion defined - using default '{}'",
+                                            script.getClass().getName(),
+                                            currentscriptVersion);
+                                } else {
+                                    currentscriptVersion = currentScriptVersionAnno.value();
+                                }
+
+                                if (upgradeScriptMetadata.getLastVersionExecuted() != null
+                                        && upgradeScriptMetadata.getLastVersionExecuted().compareTo(currentscriptVersion) >= 0) {
+                                    log.info("Upgrade script '{}' is skipped because current version '{}' is older than the last executed one ('{}')",
+                                            script.getClass().getName(),
+                                            currentscriptVersion,
+                                            upgradeScriptMetadata.getLastVersionExecuted());
+                                    continue;
+                                }
+
+                                log.info("Executing upgrade script '{}' (this version '{}', last executed version '{}')",
+                                        script.getClass().getName(),
+                                        currentscriptVersion,
+                                        upgradeScriptMetadata.getLastVersionExecuted());
+
+
                                 // collect pieces and prepare context
-                                @SuppressWarnings("unchecked")
                                 Map<String, Object> scriptConfig = (Map<String, Object>) upgradeSettings.getUpgradeConfig().get(upgradeScriptName);
                                 UpgradeScript.UpgradeContext upgradeContext = new UpgradeScript.UpgradeContext(
                                         fromVersion, toVersion, props, scriptConfig, configuration, dicomConfigurationManager, upgradeScriptMetadata);
@@ -160,29 +180,27 @@ public class UpgradeRunner {
                                 script.upgrade(upgradeContext);
 
                                 // set last executed version from the annotation of the upgrade script if present
-                                ScriptVersion scriptVersion = script.getClass().getAnnotation(ScriptVersion.class);
-                                if (scriptVersion != null) {
-                                    upgradeScriptMetadata.setLastVersionExecuted(scriptVersion.value());
-                                }
+                                upgradeScriptMetadata.setLastVersionExecuted(currentscriptVersion);
 
-                                found = true;
                             }
                         }
 
                         if (!found)
-                            throw new ConfigurationException("Upgrade script " + upgradeScriptName + " not found in the deployment");
+                            throw new ConfigurationException("Upgrade script '" + upgradeScriptName + "' not found in the deployment");
                     }
 
                     // update version
                     configMetadata.setVersion(toVersion);
 
-                    // persist metadata
+                    // persist updated metadata
                     configuration.persistNode(METADATA_ROOT_PATH, beanVitalizer.createConfigNodeFromInstance(configMetadata), ConfigurationMetadata.class);
                 } catch (ConfigurationException e) {
                     throw new RuntimeException("Error while running the upgrade", e);
                 }
             }
         });
+
+        log.info("Configuration upgrade completed successfully");
     }
 
 
