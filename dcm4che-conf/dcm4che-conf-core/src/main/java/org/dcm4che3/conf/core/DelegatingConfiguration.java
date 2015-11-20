@@ -39,11 +39,11 @@
  */
 package org.dcm4che3.conf.core;
 
-import java.util.Iterator;
-import java.util.Map;
-
 import org.dcm4che3.conf.core.api.Configuration;
 import org.dcm4che3.conf.core.api.ConfigurationException;
+
+import java.util.Iterator;
+import java.util.Map;
 
 /**
  * @author Roman K
@@ -51,6 +51,9 @@ import org.dcm4che3.conf.core.api.ConfigurationException;
 public class DelegatingConfiguration implements Configuration {
 
     protected Configuration delegate;
+
+    public DelegatingConfiguration() {
+    }
 
     public DelegatingConfiguration(Configuration delegate) {
         this.delegate = delegate;
@@ -64,11 +67,6 @@ public class DelegatingConfiguration implements Configuration {
     @Override
     public Object getConfigurationNode(String path, Class configurableClass) throws ConfigurationException {
         return delegate.getConfigurationNode(path, configurableClass);
-    }
-
-    @Override
-    public Class getConfigurationNodeClass(String path) throws ConfigurationException, ClassNotFoundException {
-        return delegate.getConfigurationNodeClass(path);
     }
 
     @Override
@@ -102,7 +100,7 @@ public class DelegatingConfiguration implements Configuration {
     }
 
     @Override
-    public void runBatch(ConfigBatch batch) {
+    public void runBatch(Batch batch) {
         delegate.runBatch(batch);
     }
 

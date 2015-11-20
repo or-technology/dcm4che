@@ -47,22 +47,16 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.TreeSet;
-import java.util.Properties;
 import java.util.TreeMap;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
-
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
@@ -75,9 +69,9 @@ import org.dcm4che3.data.UID;
 import org.dcm4che3.imageio.codec.jpeg.PatchJPEGLS;
 import org.dcm4che3.util.ResourceLocator;
 import org.dcm4che3.util.SafeClose;
-import org.dcm4che3.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 
 /**
  * Provides Image Readers for different DICOM transfer syntaxes and MIME types.
@@ -198,8 +192,8 @@ public class ImageReaderFactory implements Serializable {
         return mapTransferSyntaxUIDs;
     }
 
-    public void setMapTransferSyntaxUIDs(Map<String, List<ImageReaderParam>> map) {
-        this.mapTransferSyntaxUIDs = map;
+    public void setMapTransferSyntaxUIDs(Map<String, List<ImageReaderParam>> mapTransferSyntaxUIDs) {
+        this.mapTransferSyntaxUIDs = mapTransferSyntaxUIDs;
     }
     
     public Map<String, List<ImageReaderParam>> getMapMimeTypes() {
@@ -237,8 +231,37 @@ public class ImageReaderFactory implements Serializable {
         } catch (Exception e) {
             throw new RuntimeException("Failed to load Image Reader Factory configuration from: " + name, e);
         }
+
+        factory.init();
+
         return factory;
     }
+    
+    public void init() {
+        if (LOG.isDebugEnabled()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("Image Readers:\n");
+            for (Entry<String, List<ImageReaderParam>> entry : mapTransferSyntaxUIDs.entrySet()) {
+                String tsUid = entry.getKey();
+                sb.append(' ').append(tsUid);
+                sb.append(" (").append(UID.nameOf(tsUid)).append("): ");
+                for(ImageReaderParam reader : entry.getValue()){
+                    sb.append(reader.name);
+                    sb.append(' ');
+                }
+                sb.append('\n');
+            }
+            for (Entry<String, List<ImageReaderParam>> entry : mapMimeTypes.entrySet()) {
+                sb.append(' ').append(entry.getKey()).append(": ");
+                for(ImageReaderParam reader : entry.getValue()){
+                    sb.append(reader.name);
+                    sb.append(' ');
+                }
+                sb.append('\n');
+            }
+            LOG.debug(sb.toString());
+        }
+    }    
 
     public void load(InputStream stream) throws IOException {
         XMLStreamReader xmler = null;

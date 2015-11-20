@@ -47,6 +47,7 @@ set CP=%CP%;%DCM4CHE_HOME%\lib\dcm4che-net-${project.version}.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\dcm4che-image-${project.version}.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\dcm4che-imageio-${project.version}.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\dcm4che-imageio-codec-${project.version}.jar
+set CP=%CP%;%DCM4CHE_HOME%\lib\dcm4che-imageio-rle-${project.version}.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\dcm4che-tool-common-${project.version}.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\slf4j-api-1.7.5.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\slf4j-log4j12-1.7.5.jar
@@ -56,7 +57,7 @@ set CP=%CP%;%DCM4CHE_HOME%\lib\commons-cli-1.2.jar
 rem Setup jai-imageio native library path
 if "%JAVA_LIBRARY_PATH%" == "" set JAVA_LIBRARY_PATH=%DCM4CHE_HOME%\lib\win-i686
 
-set JAVA_OPTS=%JAVA_OPTS% -Djava.library.path=%JAVA_LIBRARY_PATH%
+set JAVA_OPTS=%JAVA_OPTS% "-Djava.library.path=%JAVA_LIBRARY_PATH%"
 
 if not "%IMAGE_READER_FACTORY%" == "" ^
  set JAVA_OPTS=%JAVA_OPTS% -Dorg.dcm4che3.imageio.codec.ImageReaderFactory=%IMAGE_READER_FACTORY%

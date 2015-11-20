@@ -41,11 +41,13 @@ package org.dcm4che3.conf.dicom;
 
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.WeakHashMap;
 
 import org.dcm4che3.audit.EventID;
 import org.dcm4che3.audit.EventTypeCode;
@@ -58,10 +60,10 @@ import org.dcm4che3.conf.api.TransferCapabilityConfigExtension;
 import org.dcm4che3.conf.api.internal.DicomConfigurationManager;
 import org.dcm4che3.conf.core.DefaultBeanVitalizer;
 import org.dcm4che3.conf.core.adapters.NullToNullDecorator;
+import org.dcm4che3.conf.core.api.BatchRunner.Batch;
 import org.dcm4che3.conf.core.api.ConfigurableClass;
 import org.dcm4che3.conf.core.api.ConfigurableProperty;
 import org.dcm4che3.conf.core.api.Configuration;
-import org.dcm4che3.conf.core.api.Configuration.ConfigBatch;
 import org.dcm4che3.conf.core.api.ConfigurationException;
 import org.dcm4che3.conf.core.api.LDAP;
 import org.dcm4che3.conf.core.api.internal.BeanVitalizer;
@@ -90,16 +92,22 @@ import org.slf4j.LoggerFactory;
 @SuppressWarnings("unchecked")
 public class CommonDicomConfiguration implements DicomConfigurationManager, TransferCapabilityConfigExtension {
 
-    private static final Logger LOG =
-            LoggerFactory.getLogger(CommonDicomConfiguration.class);
+    private static final Logger log = LoggerFactory.getLogger(CommonDicomConfiguration.class);
+
+
+    /**
+     * see preventDeviceModifications(org.dcm4che3.net.Device)
+     */
+    private Map<Device, Object> readOnlyDevices = Collections.synchronizedMap(new WeakHashMap<Device, Object>());
 
     Configuration config;
-    BeanVitalizer vitalizer;
+    private BeanVitalizer vitalizer;
 
     private final Map<Class, List<Class>> extensionsByClass;
 
     /**
      * Returns a list of registered extensions for a specified base extension class
+     *
      * @param clazz
      * @param <T>
      * @return
@@ -124,32 +132,22 @@ public class CommonDicomConfiguration implements DicomConfigurationManager, Tran
     private final ThreadLocal<Map<String, Device>> currentlyLoadedDevicesLocal = new ThreadLocal<Map<String, Device>>();
 
 
-
     public CommonDicomConfiguration(Configuration configurationStorage, Map<Class, List<Class>> extensionsByClass) {
         this.config = configurationStorage;
         this.extensionsByClass = extensionsByClass;
-        this.vitalizer = new DefaultBeanVitalizer();
 
+
+        DefaultBeanVitalizer defaultBeanVitalizer = createDefaultDicomVitalizer();
 
         // register reference handler
-        this.vitalizer.setReferenceTypeAdapter(new NullToNullDecorator(new DicomReferenceHandlerAdapter(this.vitalizer, configurationStorage)));
-
-        // register DICOM type adapters
-        this.vitalizer.registerCustomConfigTypeAdapter(AttributesFormat.class, new NullToNullDecorator(new AttributeFormatTypeAdapter()));
-        this.vitalizer.registerCustomConfigTypeAdapter(Code.class, new NullToNullDecorator(new CodeTypeAdapter()));
-        this.vitalizer.registerCustomConfigTypeAdapter(Issuer.class, new NullToNullDecorator(new IssuerTypeAdapter()));
-        this.vitalizer.registerCustomConfigTypeAdapter(ValueSelector.class, new NullToNullDecorator(new ValueSelectorTypeAdapter()));
-        this.vitalizer.registerCustomConfigTypeAdapter(Property.class, new NullToNullDecorator(new PropertyTypeAdapter()));
-
-        // register audit log type adapters
-        this.vitalizer.registerCustomConfigTypeAdapter(EventTypeCode.class, new NullToNullDecorator(new AuditSimpleTypeAdapters.EventTypeCodeAdapter()));
-        this.vitalizer.registerCustomConfigTypeAdapter(EventID.class, new NullToNullDecorator(new AuditSimpleTypeAdapters.EventIDTypeAdapter()));
-        this.vitalizer.registerCustomConfigTypeAdapter(RoleIDCode.class, new NullToNullDecorator(new AuditSimpleTypeAdapters.RoleIDCodeTypeAdapter()));
+        defaultBeanVitalizer.setReferenceTypeAdapter(new NullToNullDecorator(new DicomReferenceHandlerAdapter(defaultBeanVitalizer, configurationStorage)));
 
         // register DicomConfiguration context
-        this.vitalizer.registerContext(DicomConfiguration.class, this);
-        this.vitalizer.registerContext(ConfigurationManager.class, this);
+        defaultBeanVitalizer.registerContext(DicomConfiguration.class, this);
+        defaultBeanVitalizer.registerContext(ConfigurationManager.class, this);
 
+
+        this.vitalizer = defaultBeanVitalizer;
 
         // quick init
         try {
@@ -160,6 +158,25 @@ public class CommonDicomConfiguration implements DicomConfigurationManager, Tran
         } catch (ConfigurationException e) {
             throw new RuntimeException("Dicom configuration cannot be initialized", e);
         }
+    }
+
+    public static DefaultBeanVitalizer createDefaultDicomVitalizer() {
+        DefaultBeanVitalizer defaultBeanVitalizer = new DefaultBeanVitalizer();
+
+
+        // register DICOM type adapters
+        defaultBeanVitalizer.registerCustomConfigTypeAdapter(AttributesFormat.class, new NullToNullDecorator(new AttributeFormatTypeAdapter()));
+        defaultBeanVitalizer.registerCustomConfigTypeAdapter(Code.class, new NullToNullDecorator(new CodeTypeAdapter()));
+        defaultBeanVitalizer.registerCustomConfigTypeAdapter(Issuer.class, new NullToNullDecorator(new IssuerTypeAdapter()));
+        defaultBeanVitalizer.registerCustomConfigTypeAdapter(ValueSelector.class, new NullToNullDecorator(new ValueSelectorTypeAdapter()));
+        defaultBeanVitalizer.registerCustomConfigTypeAdapter(Property.class, new NullToNullDecorator(new PropertyTypeAdapter()));
+
+        // register audit log type adapters
+        defaultBeanVitalizer.registerCustomConfigTypeAdapter(EventTypeCode.class, new NullToNullDecorator(new AuditSimpleTypeAdapters.EventTypeCodeAdapter()));
+        defaultBeanVitalizer.registerCustomConfigTypeAdapter(EventID.class, new NullToNullDecorator(new AuditSimpleTypeAdapters.EventIDTypeAdapter()));
+        defaultBeanVitalizer.registerCustomConfigTypeAdapter(RoleIDCode.class, new NullToNullDecorator(new AuditSimpleTypeAdapters.RoleIDCodeTypeAdapter()));
+
+        return defaultBeanVitalizer;
     }
 
     protected HashMap<String, Object> createInitialConfigRootNode() {
@@ -178,6 +195,11 @@ public class CommonDicomConfiguration implements DicomConfigurationManager, Tran
         if (!configurationExists()) return false;
         config.persistNode(DicomPath.ConfigRoot.path(), new HashMap<String, Object>(), DicomConfigurationRootNode.class);
         return true;
+    }
+
+    @Override
+    public void preventDeviceModifications(Device d) {
+        readOnlyDevices.put(d, true);
     }
 
     @LDAP(objectClasses = "hl7UniqueApplicationName", distinguishingField = "hl7ApplicationName")
@@ -308,7 +330,7 @@ public class CommonDicomConfiguration implements DicomConfigurationManager, Tran
 
         String deviceNameNode = (String) search.next();
         if (search.hasNext())
-            LOG.warn("Application entity title '{}' is not unique. Check the configuration!", aet);
+            log.warn("Application entity title '{}' is not unique. Check the configuration!", aet);
         Device device = findDevice(deviceNameNode);
 
         ApplicationEntity ae = device.getApplicationEntity(aet);
@@ -394,7 +416,8 @@ public class CommonDicomConfiguration implements DicomConfigurationManager, Tran
         }
     }
 
-    protected Device vitalizeDevice(String name, Map<String, Device> deviceCache, Object deviceConfigurationNode) throws ConfigurationException {
+    @Override
+    public Device vitalizeDevice(String name, Map<String, Device> deviceCache, Object deviceConfigurationNode) throws ConfigurationException {
         if (deviceConfigurationNode == null) return null;
 
         Device device = new Device();
@@ -442,6 +465,9 @@ public class CommonDicomConfiguration implements DicomConfigurationManager, Tran
 
     @Override
     public void persist(Device device) throws ConfigurationException {
+
+        if (readOnlyDevices.containsKey(device)) handleReadOnlyDeviceModification();
+
         if (device.getDeviceName() == null) throw new ConfigurationException("The name of the device must not be null");
         if (config.nodeExists(deviceRef(device.getDeviceName())))
             throw new ConfigurationAlreadyExistsException("Device " + device.getDeviceName() + " already exists");
@@ -449,8 +475,23 @@ public class CommonDicomConfiguration implements DicomConfigurationManager, Tran
         merge(device);
     }
 
+    private void handleReadOnlyDeviceModification() {
+
+        String message = "Persisting the config for a Device object that is marked as read-only. " +
+                "This warning is not affecting the behavior for now, but soon it will be replaced with throwing an exception!" +
+                "If you want to make config modifications, use a separate instance of Device! See CSP configuration docs for details.";
+
+        // create exception to log the stacktrace
+        ConfigurationException exception = new ConfigurationException();
+
+        log.warn(message,exception);
+    }
+
     @Override
     public void merge(Device device) throws ConfigurationException {
+
+        if (readOnlyDevices.containsKey(device)) handleReadOnlyDeviceModification();
+
         if (device.getDeviceName() == null) throw new ConfigurationException("The name of the device must not be null");
         Map<String, Object> configNode = createDeviceConfigNode(device);
         config.persistNode(deviceRef(device.getDeviceName()), configNode, Device.class);
@@ -540,19 +581,19 @@ public class CommonDicomConfiguration implements DicomConfigurationManager, Tran
                 configurationNode,
                 TCConfiguration.class);
     }
-    
+
     @Override
     public void runBatch(final DicomConfigBatch dicomConfigBatch) {
         /*
          * Use the batch support of underlying configuration storage to execute batch
          */
-        config.runBatch(new ConfigBatch() {
+        config.runBatch(new Batch() {
 
             @Override
             public void run() {
                 dicomConfigBatch.run();
             }
-            
+
         });
     }
 

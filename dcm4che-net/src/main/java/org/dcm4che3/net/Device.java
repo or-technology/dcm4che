@@ -38,39 +38,29 @@
 
 package org.dcm4che3.net;
 
-import java.io.IOException;
-import java.io.Serializable;
-import java.security.GeneralSecurityException;
-import java.security.KeyManagementException;
-import java.security.cert.X509Certificate;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.TimeZone;
-import java.util.TreeMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-
-import javax.net.ssl.KeyManager;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-
 import org.dcm4che3.conf.core.api.ConfigurableClass;
 import org.dcm4che3.conf.core.api.ConfigurableProperty;
+import org.dcm4che3.conf.core.api.ConfigurableProperty.ConfigurablePropertyType;
 import org.dcm4che3.conf.core.api.ConfigurableProperty.Tag;
 import org.dcm4che3.conf.core.api.LDAP;
 import org.dcm4che3.data.Code;
 import org.dcm4che3.data.Issuer;
 import org.dcm4che3.util.StringUtils;
+
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import java.io.IOException;
+import java.io.Serializable;
+import java.security.GeneralSecurityException;
+import java.security.KeyManagementException;
+import java.security.cert.X509Certificate;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * DICOM Part 15, Annex H compliant description of a DICOM enabled system or
@@ -80,7 +70,6 @@ import org.dcm4che3.util.StringUtils;
  * (TLS-enabled, AE titles used, etc.).
  *
  * @author Gunter Zeilinger <gunterze@gmail.com>
- *
  */
 @LDAP(
         objectClasses = {"dcmDevice", "dicomDevice"},
@@ -93,13 +82,18 @@ public class Device implements Serializable {
     @ConfigurableProperty(name = "dicomDeviceName", label = "Device name", tags = Tag.PRIMARY)
     private String deviceName;
 
-    // Will add later on one big bang refactoring
-//    @ConfigurableProperty(name = "dcmUUID", tags = Tag.UUID,
-//    description = "An immutable unique identifier")
-//    private String uuid = UUID.randomUUID().toString();
+    /**
+     * Temporarily gets assigned the value of device name with a prefix
+     * @see Device#setDeviceName(String)
+     */
+    @ConfigurableProperty(type = ConfigurablePropertyType.UUID)
+    private String uuid;
 
     @ConfigurableProperty(name = "dicomDescription")
     private String description;
+
+    @ConfigurableProperty(type = ConfigurablePropertyType.OptimisticLockingHash)
+    private String olockHash;
 
     @ConfigurableProperty(name = "dicomManufacturer")
     private String manufacturer;
@@ -210,33 +204,40 @@ public class Device implements Serializable {
 
     @LDAP(noContainerNode = true)
     @ConfigurableProperty(
-            name="dicomConnection",
+            name = "dicomConnection",
             label = "Connections"
     )
     private final List<Connection> connections = new ArrayList<Connection>();
 
     /**
-     * Note: This only maps the main AE titles to application entities. The
+     * Note: This only maps the main AE titles to application entities.
      * {@link #aliasApplicationEntitiesMap} will contain also alias AE titles.
      */
     @LDAP(noContainerNode = true)
     @ConfigurableProperty(
-            name="dicomNetworkAE",
+            name = "dicomNetworkAE",
             label = "Application Entities"
     )
     private final Map<String, ApplicationEntity> applicationEntitiesMap =
             new TreeMap<String, ApplicationEntity>();
 
+
+    @ConfigurableProperty(isReference = true,
+            name = "dcmDefaultAE",
+            tags = Tag.PRIMARY,
+            description = "Default AE to be used by both services running locally on this device as well as external services"
+    )
+    private ApplicationEntity defaultAE;
+
     /**
      * Maps alias AE titles ({@link ApplicationEntity#getAETitleAliases()}),
-     * including also the main AE title ({@link ApplicationEntity#getAETitle()}
-     * ), to application entities.
+     * including also the main AE title ({@link ApplicationEntity#getAETitle()}), to application entities.
      */
     private final transient Map<String, ApplicationEntity> aliasApplicationEntitiesMap = new TreeMap<String, ApplicationEntity>();
 
     @ConfigurableProperty(name = "deviceExtensions", isExtensionsProperty = true)
-    private Map<Class<? extends DeviceExtension>,DeviceExtension> extensions =
-            new HashMap<Class<? extends DeviceExtension>,DeviceExtension>();
+    private Map<Class<? extends DeviceExtension>, DeviceExtension> extensions =
+            new HashMap<Class<? extends DeviceExtension>, DeviceExtension>();
 
     private transient AssociationHandler associationHandler = new AssociationHandler();
     private transient DimseRQHandler dimseRQHandler;
@@ -258,17 +259,17 @@ public class Device implements Serializable {
         setDeviceName(name);
     }
 
-//    public String getUuid() {
-//        return uuid;
-//    }
-//
-//    public void setUuid(String uuid) {
-//        this.uuid = uuid;
-//    }
-
     private void checkNotEmpty(String name, String val) {
         if (val != null && val.isEmpty())
             throw new IllegalArgumentException(name + " cannot be empty");
+    }
+
+    public ApplicationEntity getDefaultAE() {
+        return defaultAE;
+    }
+
+    public void setDefaultAE(ApplicationEntity defaultAE) {
+        this.defaultAE = defaultAE;
     }
 
     /**
@@ -288,6 +289,8 @@ public class Device implements Serializable {
     public final void setDeviceName(String name) {
         checkNotEmpty("Device Name", name);
         this.deviceName = name;
+        // temporarily
+        this.uuid = "Device-" + name;
     }
 
     /**
@@ -302,8 +305,7 @@ public class Device implements Serializable {
     /**
      * Set the description of this device.
      *
-     * @param description
-     *                A String containing the device description.
+     * @param description A String containing the device description.
      */
     public final void setDescription(String description) {
         this.description = description;
@@ -320,12 +322,11 @@ public class Device implements Serializable {
 
     /**
      * Set the manufacturer of this device.
-     * <p>
+     * <p/>
      * This should be the same as the value of Manufacturer (0008,0070) in SOP
      * instances created by this device.
      *
-     * @param manufacturer
-     *                A String containing the device manufacturer.
+     * @param manufacturer A String containing the device manufacturer.
      */
     public final void setManufacturer(String manufacturer) {
         this.manufacturer = manufacturer;
@@ -342,12 +343,11 @@ public class Device implements Serializable {
 
     /**
      * Set the manufacturer model name of this device.
-     * <p>
+     * <p/>
      * This should be the same as the value of Manufacturer Model Name
      * (0008,1090) in SOP instances created by this device.
      *
-     * @param manufacturerModelName
-     *                A String containing the device manufacturer model name.
+     * @param manufacturerModelName A String containing the device manufacturer model name.
      */
     public final void setManufacturerModelName(String manufacturerModelName) {
         this.manufacturerModelName = manufacturerModelName;
@@ -364,12 +364,11 @@ public class Device implements Serializable {
 
     /**
      * Set the software versions running on (or implemented by) this device.
-     * <p>
+     * <p/>
      * This should be the same as the values of Software Versions (0018,1020) in
      * SOP instances created by this device.
      *
-     * @param softwareVersions
-     *                A String array containing the software versions.
+     * @param softwareVersions A String array containing the software versions.
      */
     public final void setSoftwareVersions(String... softwareVersions) {
         this.softwareVersions = softwareVersions;
@@ -386,12 +385,11 @@ public class Device implements Serializable {
 
     /**
      * Set the station name belonging to this device.
-     * <p>
+     * <p/>
      * This should be the same as the value of Station Name (0008,1010) in SOP
      * instances created by this device.
      *
-     * @param stationName
-     *                A String containing the station name.
+     * @param stationName A String containing the station name.
      */
     public final void setStationName(String stationName) {
         this.stationName = stationName;
@@ -408,12 +406,11 @@ public class Device implements Serializable {
 
     /**
      * Set the serial number of this device.
-     * <p>
+     * <p/>
      * This should be the same as the value of Device Serial Number (0018,1000)
      * in SOP instances created by this device.
      *
-     * @param deviceSerialNumber
-     *                A String containing the serial number.
+     * @param deviceSerialNumber A String containing the serial number.
      */
     public final void setDeviceSerialNumber(String deviceSerialNumber) {
         this.deviceSerialNumber = deviceSerialNumber;
@@ -430,7 +427,7 @@ public class Device implements Serializable {
 
     /**
      * Set the type codes associated with this device.
-     * <p>
+     * <p/>
      * Represents the kind of device and is most applicable for acquisition
      * modalities. Types should be selected from the list of code values
      * (0008,0100) for Context ID 30 in PS3.16 when applicable.
@@ -454,12 +451,11 @@ public class Device implements Serializable {
     /**
      * Set the institution name associated with this device; may be the site
      * where it resides or is operating on behalf of.
-     * <p>
+     * <p/>
      * Should be the same as the value of Institution Name (0008,0080) in SOP
      * Instances created by this device.
      *
-     * @param names
-     *                A String array containing the institution name values.
+     * @param names A String array containing the institution name values.
      */
     public void setInstitutionNames(String... names) {
         institutionNames = names;
@@ -484,12 +480,11 @@ public class Device implements Serializable {
 
     /**
      * Get the address of the institution which operates this device.
-     * <p>
+     * <p/>
      * Should be the same as the value of Institution Address (0008,0081)
      * attribute in SOP Instances created by this device.
      *
-     * @param addresses
-     *                A String array containing the institution address values.
+     * @param addresses A String array containing the institution address values.
      */
     public void setInstitutionAddresses(String... addresses) {
         institutionAddresses = addresses;
@@ -506,12 +501,11 @@ public class Device implements Serializable {
 
     /**
      * Set the department name associated with this device.
-     * <p>
+     * <p/>
      * Should be the same as the value of Institutional Department Name
      * (0008,1040) in SOP Instances created by this device.
      *
-     * @param names
-     *                A String array containing the dept. name values.
+     * @param names A String array containing the dept. name values.
      */
     public void setInstitutionalDepartmentNames(String... names) {
         institutionalDepartmentNames = names;
@@ -651,6 +645,14 @@ public class Device implements Serializable {
         this.trustStorePinProperty = trustStorePinProperty;
     }
 
+    public String getOlockHash() {
+        return olockHash;
+    }
+
+    public void setOlockHash(String olockHash) {
+        this.olockHash = olockHash;
+    }
+
     public X509Certificate[] getThisNodeCertificates(String ref) {
         return thisNodeCertificates.get(ref);
     }
@@ -746,7 +748,7 @@ public class Device implements Serializable {
             System.arraycopy(certs, 0, dest, destPos, certs.length);
             destPos += certs.length;
         }
-        return dest ;
+        return dest;
     }
 
 
@@ -770,8 +772,7 @@ public class Device implements Serializable {
     /**
      * Set device specific vendor configuration information
      *
-     * @param vendorData
-     *                An Object of the device data.
+     * @param vendorData An Object of the device data.
      */
     public void setVendorData(byte[]... vendorData) {
         this.vendorData = vendorData;
@@ -793,8 +794,7 @@ public class Device implements Serializable {
      * the network. (This is useful for pre-configuration, mobile vans, and
      * similar situations.)
      *
-     * @param installed
-     *                A boolean which will be true if this device is installed.
+     * @param installed A boolean which will be true if this device is installed.
      * @throws IOException
      * @throws GeneralSecurityException
      * @throws KeyManagementException
@@ -811,9 +811,8 @@ public class Device implements Serializable {
         this.timeZoneOfDevice = timeZoneOfDevice;
     }
 
-    public TimeZone getTimeZoneOfDevice()
-    {
-	return timeZoneOfDevice;
+    public TimeZone getTimeZoneOfDevice() {
+        return timeZoneOfDevice;
     }
 
     public final void setDimseRQHandler(DimseRQHandler dimseRQHandler) {
@@ -853,14 +852,13 @@ public class Device implements Serializable {
                 con.rebind();
     }
 
-    private void needRebindConnections()  {
+    private void needRebindConnections() {
         for (Connection con : connections)
             con.needRebind();
-     }
+    }
 
 
-
-    private void needReconfigureTLS()  {
+    private void needReconfigureTLS() {
         for (Connection con : connections)
             if (con.isTls())
                 con.needRebind();
@@ -941,6 +939,13 @@ public class Device implements Serializable {
         }
     }
 
+    /**
+     * This is a low-level access method. Do not use this method to lookup AEs,
+     * use {@link Device#getApplicationEntity(String)} instead - it will also handle aliases and special cases.
+     *
+     * @return
+     */
+    @Deprecated
     public Map<String, ApplicationEntity> getApplicationEntitiesMap() {
         return new HashMap<String, ApplicationEntity>(applicationEntitiesMap);
     }
@@ -989,7 +994,6 @@ public class Device implements Serializable {
     public Map<Class<? extends DeviceExtension>, DeviceExtension> getExtensions() {
         return extensions;
     }
-
 
 
     public void addDeviceExtension(DeviceExtension ext) {
@@ -1066,6 +1070,12 @@ public class Device implements Serializable {
         return aliasApplicationEntitiesMap.keySet();
     }
 
+    /**
+     * This is a low-level access method. Do not use this method to lookup AEs,
+     * use {@link Device#getApplicationEntity(String)} instead - it will also handle aliases and special cases.
+     *
+     * @return
+     */
     public Collection<ApplicationEntity> getApplicationEntities() {
         return applicationEntitiesMap.values();
     }
@@ -1085,8 +1095,8 @@ public class Device implements Serializable {
             return ret;
         String keyStorePin = keyStorePin();
         km = ret = SSLManagerFactory.createKeyManager(keyStoreType(),
-                        StringUtils.replaceSystemProperties(keyStoreURL),
-                        keyStorePin(), keyPin(keyStorePin));
+                StringUtils.replaceSystemProperties(keyStoreURL),
+                keyStorePin(), keyPin(keyStorePin));
         return ret;
     }
 
@@ -1145,10 +1155,10 @@ public class Device implements Serializable {
 
         tm = ret = trustStoreURL != null
                 ? SSLManagerFactory.createTrustManager(trustStoreType(),
-                        StringUtils.replaceSystemProperties(trustStoreURL),
-                        trustStorePin())
+                StringUtils.replaceSystemProperties(trustStoreURL),
+                trustStorePin())
                 : SSLManagerFactory.createTrustManager(
-                        getAllAuthorizedNodeCertificates());
+                getAllAuthorizedNodeCertificates());
         return ret;
     }
 
@@ -1187,8 +1197,8 @@ public class Device implements Serializable {
     private static SSLContext createSSLContext(KeyManager km, TrustManager tm)
             throws GeneralSecurityException {
         SSLContext ctx = SSLContext.getInstance("TLS");
-        ctx.init(km != null ? new KeyManager[]{ km } : null,
-                tm != null ? new TrustManager[]{ tm } : null, null);
+        ctx.init(km != null ? new KeyManager[]{km} : null,
+                tm != null ? new TrustManager[]{tm} : null, null);
         return ctx;
     }
 
@@ -1200,7 +1210,7 @@ public class Device implements Serializable {
     }
 
     public ScheduledFuture<?> schedule(Runnable command, long delay,
-            TimeUnit unit) {
+                                       TimeUnit unit) {
         if (scheduledExecutor == null)
             throw new IllegalStateException(
                     "scheduled executor service not initalized");
@@ -1209,7 +1219,7 @@ public class Device implements Serializable {
     }
 
     public ScheduledFuture<?> scheduleAtFixedRate(Runnable command,
-            long initialDelay, long period, TimeUnit unit) {
+                                                  long initialDelay, long period, TimeUnit unit) {
         if (scheduledExecutor == null)
             throw new IllegalStateException(
                     "scheduled executor service not initalized");
@@ -1219,7 +1229,7 @@ public class Device implements Serializable {
     }
 
     public ScheduledFuture<?> scheduleWithFixedDelay(Runnable command,
-            long initialDelay, long delay, TimeUnit unit) {
+                                                     long initialDelay, long delay, TimeUnit unit) {
         if (scheduledExecutor == null)
             throw new IllegalStateException(
                     "scheduled executor service not initalized");
@@ -1236,8 +1246,8 @@ public class Device implements Serializable {
     public StringBuilder promptTo(StringBuilder sb, String indent) {
         String indent2 = indent + "  ";
         StringUtils.appendLine(sb, indent, "Device[name: ", deviceName);
-        StringUtils.appendLine(sb, indent2,"desc: ", description);
-        StringUtils.appendLine(sb, indent2,"installed: ", installed);
+        StringUtils.appendLine(sb, indent2, "desc: ", description);
+        StringUtils.appendLine(sb, indent2, "installed: ", installed);
         for (Connection conn : connections)
             conn.promptTo(sb, indent2).append(StringUtils.LINE_SEPARATOR);
         for (ApplicationEntity ae : applicationEntitiesMap.values())
@@ -1253,12 +1263,13 @@ public class Device implements Serializable {
     }
 
     protected void setDeviceAttributes(Device from) {
+        setOlockHash(from.olockHash);
         setDescription(from.description);
         setManufacturer(from.manufacturer);
         setManufacturerModelName(from.manufacturerModelName);
         setSoftwareVersions(from.softwareVersions);
         setStationName(from.stationName);
-//        setUuid(from.getUuid());
+        setUuid(from.getUuid());
         setDeviceSerialNumber(from.deviceSerialNumber);
         setTrustStoreURL(from.trustStoreURL);
         setTrustStoreType(from.trustStoreType);
@@ -1287,19 +1298,20 @@ public class Device implements Serializable {
         setVendorData(from.vendorData);
         setLimitOpenAssociations(from.limitOpenAssociations);
         setInstalled(from.installed);
-     }
+        setDefaultAE(from.getDefaultAE());
+    }
 
-     private void setAuthorizedNodeCertificates(Map<String, X509Certificate[]> from) {
-         if (update(authorizedNodeCertificates, from))
-             setTrustManager(null);
-     }
+    private void setAuthorizedNodeCertificates(Map<String, X509Certificate[]> from) {
+        if (update(authorizedNodeCertificates, from))
+            setTrustManager(null);
+    }
 
-     private void setThisNodeCertificates(Map<String, X509Certificate[]> from) {
-         update(thisNodeCertificates, from);
-     }
+    private void setThisNodeCertificates(Map<String, X509Certificate[]> from) {
+        update(thisNodeCertificates, from);
+    }
 
-     private boolean update(Map<String, X509Certificate[]> target,
-            Map<String, X509Certificate[]> from) {
+    private boolean update(Map<String, X509Certificate[]> target,
+                           Map<String, X509Certificate[]> from) {
         boolean updated = target.keySet().retainAll(from.keySet());
         for (Entry<String, X509Certificate[]> e : from.entrySet()) {
             String key = e.getKey();
@@ -1311,44 +1323,43 @@ public class Device implements Serializable {
             }
         }
         return updated;
-     }
-
-     private void reconfigureConnections(Device from) {
-         Iterator<Connection> connIter = connections.iterator();
-         while (connIter.hasNext()) {
-             Connection conn = connIter.next();
-             if (from.connectionWithEqualsRDN(conn) == null) {
-                 connIter.remove();
-                 conn.setDevice(null);
-                 conn.unbind();
-             }
-         }
-         for (Connection src : from.connections) {
-             Connection conn = connectionWithEqualsRDN(src);
-             if (conn == null)
-                 this.addConnection(conn = new Connection());
-             conn.reconfigure(src);
-         }
     }
 
-     private void reconfigureApplicationEntities(Device from) {
-         applicationEntitiesMap.keySet().retainAll(from.applicationEntitiesMap.keySet());
-         for (ApplicationEntity src : from.applicationEntitiesMap.values()) {
-             ApplicationEntity ae = applicationEntitiesMap.get(src.getAETitle());
-             if (ae == null)
-                 addApplicationEntity(ae = new ApplicationEntity(src.getAETitle()));
-             ae.reconfigure(src);
-         }
+    private void reconfigureConnections(Device from) {
+        Iterator<Connection> connIter = connections.iterator();
+        while (connIter.hasNext()) {
+            Connection conn = connIter.next();
+            if (from.connectionWithEqualsRDN(conn) == null) {
+                connIter.remove();
+                conn.setDevice(null);
+                conn.unbind();
+            }
+        }
+        for (Connection src : from.connections) {
+            Connection conn = connectionWithEqualsRDN(src);
+            if (conn == null)
+                this.addConnection(conn = new Connection());
+            conn.reconfigure(src);
+        }
+    }
+
+    private void reconfigureApplicationEntities(Device from) {
+        applicationEntitiesMap.keySet().retainAll(from.applicationEntitiesMap.keySet());
+        for (ApplicationEntity src : from.applicationEntitiesMap.values()) {
+            ApplicationEntity ae = applicationEntitiesMap.get(src.getAETitle());
+            if (ae == null)
+                addApplicationEntity(ae = new ApplicationEntity(src.getAETitle()));
+            ae.reconfigure(src);
+        }
 
         aliasApplicationEntitiesMap.clear();
-        for (ApplicationEntity ae : applicationEntitiesMap.values())
-        {
+        for (ApplicationEntity ae : applicationEntitiesMap.values()) {
             addAllAliasesForApplicationEntity(ae);
         }
-     }
+    }
 
     public void reconfigureConnections(List<Connection> conns,
-            List<Connection> src) {
+                                       List<Connection> src) {
         conns.clear();
         for (Connection conn : src)
             conns.add(connectionWithEqualsRDN(conn));
@@ -1356,7 +1367,7 @@ public class Device implements Serializable {
 
     private void reconfigureDeviceExtensions(Device from) {
         for (Iterator<Class<? extends DeviceExtension>> it =
-                extensions.keySet().iterator(); it.hasNext();) {
+             extensions.keySet().iterator(); it.hasNext(); ) {
             if (!from.extensions.containsKey(it.next()))
                 it.remove();
         }
@@ -1386,7 +1397,7 @@ public class Device implements Serializable {
     public <T extends DeviceExtension> T getDeviceExtensionNotNull(Class<T> clazz) {
         T devExt = getDeviceExtension(clazz);
         if (devExt == null)
-            throw new IllegalStateException("No " + clazz.getName()+ " configured for Device: " + deviceName);
+            throw new IllegalStateException("No " + clazz.getName() + " configured for Device: " + deviceName);
         return devExt;
     }
 
@@ -1406,5 +1417,13 @@ public class Device implements Serializable {
         if (applicationEntity == null)
             throw new IllegalArgumentException("Device " + deviceName + " does not contain AET " + aet);
         return applicationEntity;
+    }
+
+    public String getUuid() {
+        return uuid;
+    }
+
+    public void setUuid(String uuid) {
+        this.uuid = uuid;
     }
 }

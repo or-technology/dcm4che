@@ -38,7 +38,10 @@
 package org.dcm4che3.imageio.codec;
 
 import java.awt.image.BufferedImage;
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
@@ -46,13 +49,12 @@ import javax.imageio.stream.FileImageInputStream;
 import javax.imageio.stream.ImageInputStream;
 import javax.imageio.stream.MemoryCacheImageInputStream;
 
-import org.dcm4che3.data.Tag;
 import org.dcm4che3.data.Attributes;
 import org.dcm4che3.data.BulkData;
 import org.dcm4che3.data.Fragments;
+import org.dcm4che3.data.Tag;
 import org.dcm4che3.data.VR;
 import org.dcm4che3.data.Value;
-import org.dcm4che3.image.PhotometricInterpretation;
 import org.dcm4che3.imageio.codec.ImageReaderFactory.ImageReaderItem;
 import org.dcm4che3.imageio.codec.jpeg.PatchJPEGLS;
 import org.dcm4che3.imageio.codec.jpeg.PatchJPEGLSImageInputStream;
@@ -63,8 +65,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * @author Gunter Zeilinger <gunterze@gmail.com>
+ * Decompresses the pixel data of compressed DICOM images to the native (uncompressed) format.
  *
+ * @author Gunter Zeilinger <gunterze@gmail.com>
+ * @author Hermann Czedik-Eysenberg <hermann-agfa@czedik.net>
  */
 public class Decompressor {
 
@@ -133,8 +137,6 @@ public class Decompressor {
             return false;
 
         imageParams.decompress(dataset, tsType);
-        if (tsType == TransferSyntaxType.RLE)
-            decompressedImage = BufferedImageUtils.createBufferedImage(imageParams, tsType);
 
         dataset.setValue(Tag.PixelData, VR.OW, new Value() {
 
@@ -204,6 +206,9 @@ public class Decompressor {
         if (pixels instanceof Fragments && ((Fragments) pixels).get(index+1) instanceof BulkData)
             iis = SegmentedImageInputStream.ofFrame(iis, (Fragments) pixels, index, imageParams.getFrames());
 
+        if (decompressedImage == null && tsType == TransferSyntaxType.RLE)
+            decompressedImage = BufferedImageUtils.createBufferedImage(imageParams, tsType);
+
         imageReader.setInput(patchJPEGLS != null
                 ? new PatchJPEGLSImageInputStream(iis, patchJPEGLS)
                 : iis);
@@ -242,5 +247,24 @@ public class Decompressor {
         return null;
     }
 
+    /**
+     * @return (Pessimistic) estimation of the maximum heap memory (in bytes) that will be needed at any moment in time
+     * during decompression.
+     */
+    public long getEstimatedNeededMemory() {
+        if (pixels == null)
+            return 0;
 
+        long uncompressedFrameLength = imageParams.getFrameLength();
+
+        // Memory needed for reading one compressed frame
+        // (For now: pessimistic assumption that same memory as for the uncompressed frame is needed. This very much
+        // depends on the compression algorithm and properties.)
+        // Actually it might be much less, if the decompressor supports streaming in the compressed data.
+        long compressedFrameLength = uncompressedFrameLength;
+
+        // As decompression happens lazily on demand (when writing to the OutputStream) the needed memory at one moment
+        // in time will just be one compressed frame plus one decompressed frame.
+        return compressedFrameLength + uncompressedFrameLength;
+    }
 }

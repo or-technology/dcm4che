@@ -64,10 +64,12 @@ import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
+
 import org.dcm4che3.conf.core.api.ConfigurableClass;
 import org.dcm4che3.conf.core.api.ConfigurableProperty;
 import org.dcm4che3.conf.core.api.LDAP;
 import org.dcm4che3.data.UID;
+import org.dcm4che3.imageio.codec.ImageReaderFactory.ImageReaderParam;
 import org.dcm4che3.imageio.codec.jpeg.PatchJPEGLS;
 import org.dcm4che3.util.Property;
 import org.dcm4che3.util.ResourceLocator;
@@ -75,6 +77,20 @@ import org.dcm4che3.util.SafeClose;
 import org.dcm4che3.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriter;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Serializable;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Properties;
+import java.util.TreeMap;
 
 /**
  * Provides Image Writers for different DICOM transfer syntaxes and MIME types.
@@ -273,7 +289,36 @@ public class ImageWriterFactory implements Serializable {
         } catch (Exception e) {
             throw new RuntimeException("Failed to load Image Writer Factory configuration from: " + name, e);
         }
+
+        factory.init();
+
         return factory;
+    }
+
+    public void init() {
+        if (LOG.isDebugEnabled()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("Image Writers:\n");
+            for (Entry<String, List<ImageWriterParam>> entry : mapTransferSyntaxUIDs.entrySet()) {
+                String tsUid = entry.getKey();
+                sb.append(' ').append(tsUid);
+                sb.append(" (").append(UID.nameOf(tsUid)).append("): ");
+                for(ImageWriterParam reader : entry.getValue()){
+                    sb.append(reader.name);
+                    sb.append(' ');
+                }
+                sb.append('\n');
+            }
+            for (Entry<String, List<ImageWriterParam>> entry : mapMimeTypes.entrySet()) {
+                sb.append(' ').append(entry.getKey()).append(": ");
+                for(ImageWriterParam reader : entry.getValue()){
+                    sb.append(reader.name);
+                    sb.append(' ');
+                }
+                sb.append('\n');
+            }
+            LOG.debug(sb.toString());
+        }
     }
 
     public void load(InputStream stream) throws IOException {

@@ -38,61 +38,66 @@
  *  ***** END LICENSE BLOCK *****
  */
 
-package org.dcm4che3.conf.dicom.decorators;
+package org.dcm4che3.conf.core.storage;
 
-import org.dcm4che3.conf.api.internal.DicomConfigurationManager;
-import org.dcm4che3.conf.core.DelegatingConfiguration;
 import org.dcm4che3.conf.core.api.Configuration;
 import org.dcm4che3.conf.core.api.ConfigurationException;
-import org.dcm4che3.conf.dicom.DicomPath;
-import org.dcm4che3.net.Device;
+import org.dcm4che3.conf.core.util.ConfigNodeUtil;
 
+import java.util.Iterator;
 import java.util.Map;
 
 /**
- * Performs validation of modifications and ensures referential integrity of configuration
- *
- * Current impl is a quick solution - persist/remove the node and try to reload all devices, if fails, revert the persisted node back
  * @author Roman K
  */
-public class DicomValidatingConfigurationDecorator extends DelegatingConfiguration {
+public class InMemoryReadOnlyConfiguration implements Configuration {
 
-    private DicomConfigurationManager configurationManager;
+    private final Map<String, Object> root;
 
-    public DicomValidatingConfigurationDecorator(Configuration delegate, DicomConfigurationManager configurationManager) {
-        super(delegate);
-        this.configurationManager = configurationManager;
+    public InMemoryReadOnlyConfiguration(Map<String, Object> root) {
+        this.root = root;
+    }
+
+    @Override
+    public Map<String, Object> getConfigurationRoot() throws ConfigurationException {
+        return root;
+    }
+
+    @Override
+    public Object getConfigurationNode(String path, Class configurableClass) throws ConfigurationException {
+        return ConfigNodeUtil.getNode(root, path);
+    }
+
+    @Override
+    public boolean nodeExists(String path) throws ConfigurationException {
+        return ConfigNodeUtil.nodeExists(root, path);
+    }
+
+    @Override
+    public void refreshNode(String path) throws ConfigurationException {
     }
 
     @Override
     public void persistNode(String path, Map<String, Object> configNode, Class configurableClass) throws ConfigurationException {
-        Object oldConfig = delegate.getConfigurationNode(path, configurableClass);
-
-        delegate.persistNode(path, configNode, configurableClass);
-
-        try {
-            for (String deviceName : configurationManager.listDeviceNames())
-                configurationManager.findDevice(deviceName);
-        } catch (ConfigurationException e) {
-            // validation failed, replace the node back
-            delegate.persistNode(path, (Map<String, Object>) oldConfig, Device.class);
-            throw e;
-        }
+        throw new RuntimeException("Configuration is read-only");
     }
 
     @Override
     public void removeNode(String path) throws ConfigurationException {
-        Object oldConfig = delegate.getConfigurationNode(path, Device.class);
+        throw new RuntimeException("Configuration is read-only");
+    }
 
-        delegate.removeNode(path);
+    @Override
+    public Iterator search(String liteXPathExpression) throws IllegalArgumentException, ConfigurationException {
+        return ConfigNodeUtil.search(root, liteXPathExpression);
+    }
 
-        try {
-            for (String deviceName : configurationManager.listDeviceNames())
-                configurationManager.findDevice(deviceName);
-        } catch (ConfigurationException e) {
-            // validation failed, replace the node back
-            delegate.persistNode(path, (Map<String, Object>) oldConfig, Device.class);
-            throw e;
-        }
+    @Override
+    public void lock() {
+    }
+
+    @Override
+    public void runBatch(Batch batch) {
+        batch.run();
     }
 }
