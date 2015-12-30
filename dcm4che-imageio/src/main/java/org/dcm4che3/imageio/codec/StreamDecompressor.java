@@ -55,7 +55,6 @@ import org.slf4j.LoggerFactory;
 import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.MemoryCacheImageInputStream;
-
 import java.awt.image.*;
 import java.io.IOException;
 

@@ -64,22 +64,6 @@ public class SegmentedImageInputStream extends ImageInputStreamImpl {
     private byte[] header = new byte[8];
 
     public SegmentedImageInputStream(ImageInputStream stream,
-                                     Fragments pixeldataFragments, int frameIndex) throws IOException {
-        long[] offsets = new long[pixeldataFragments.size()-(frameIndex+1)];
-        int[] length = new int[offsets.length];
-        for (int i = 0; i < length.length; i++) {
-            BulkData bulkData = (BulkData) pixeldataFragments.get(i+frameIndex+1);
-            offsets[i] = bulkData.offset();
-            length[i] = bulkData.length();
-        }
-        this.stream = stream;
-        this.segmentPositionsList = offsets;
-        this.segmentLengths = length;
-        this.autoExtend = false;
-        seek(0);
-    }
-
-    public SegmentedImageInputStream(ImageInputStream stream,
                                      long[] segmentPositionsList, int[] segmentLengths)
                     throws IOException {
         this.stream = stream;

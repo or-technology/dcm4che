@@ -58,7 +58,6 @@ import org.slf4j.LoggerFactory;
 import javax.imageio.*;
 import javax.imageio.stream.ImageInputStream;
 import javax.imageio.stream.MemoryCacheImageOutputStream;
-
 import java.awt.image.*;
 import java.io.IOException;
 

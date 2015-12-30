@@ -46,13 +46,11 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Set;
 import java.util.TreeMap;
 
 import javax.imageio.ImageIO;
@@ -236,7 +234,7 @@ public class ImageReaderFactory implements Serializable {
 
         return factory;
     }
-    
+
     public void init() {
         if (LOG.isDebugEnabled()) {
             StringBuilder sb = new StringBuilder();
@@ -245,7 +243,10 @@ public class ImageReaderFactory implements Serializable {
                 String tsUid = entry.getKey();
                 sb.append(' ').append(tsUid);
                 sb.append(" (").append(UID.nameOf(tsUid)).append("): ");
+                int k =1;
                 for(ImageReaderParam reader : entry.getValue()){
+                    sb.append(k++);
+                    sb.append(") ");
                     sb.append(reader.name);
                     sb.append(' ');
                 }
@@ -253,7 +254,10 @@ public class ImageReaderFactory implements Serializable {
             }
             for (Entry<String, List<ImageReaderParam>> entry : mapMimeTypes.entrySet()) {
                 sb.append(' ').append(entry.getKey()).append(": ");
+                int k =1;
                 for(ImageReaderParam reader : entry.getValue()){
+                    sb.append(k++);
+                    sb.append(") ");
                     sb.append(reader.name);
                     sb.append(' ');
                 }
@@ -261,7 +265,7 @@ public class ImageReaderFactory implements Serializable {
             }
             LOG.debug(sb.toString());
         }
-    }    
+    }
 
     public void load(InputStream stream) throws IOException {
         XMLStreamReader xmler = null;
@@ -285,6 +289,7 @@ public class ImageReaderFactory implements Serializable {
                                         key = xmler.getName().getLocalPart();
                                         if ("element".equals(key)) {
                                             String tsuid = xmler.getAttributeValue(null, "tsuid");
+                                            String mime = xmler.getAttributeValue(null, "mime");
                                             
                                             boolean state = true;
                                             while (xmler.hasNext() && state) {
@@ -304,7 +309,12 @@ public class ImageReaderFactory implements Serializable {
                                                                         "class"), xmler.getAttributeValue(null,
                                                                         "patchJPEGLS"), xmler.getAttributeValue(null,
                                                                         "name"));
-                                                                put(tsuid, param);
+                                                                if(tsuid != null){
+                                                                    putForTransferSyntaxUID(tsuid, param);
+                                                                }
+                                                                if(mime != null){
+                                                                    putForMimeType(mime, param);
+                                                                }
                                                             }
                                                         }
                                                         break;
@@ -371,12 +381,8 @@ public class ImageReaderFactory implements Serializable {
     public List<ImageReaderParam> getForTransferSyntaxUID(String tsuid) {
         return mapTransferSyntaxUIDs.get(tsuid);
     }
-
-    public List<ImageReaderParam> getForMimeType(String mimeType) {
-        return mapMimeTypes.get(mimeType);
-    }
-
-    private boolean put(String tsuid, ImageReaderParam param) {
+    
+    private boolean putForTransferSyntaxUID(String tsuid, ImageReaderParam param) {
         List<ImageReaderParam> readerSet = getForTransferSyntaxUID(tsuid);
         if (readerSet == null) {
             readerSet = new ArrayList<ImageReaderParam>();
@@ -384,17 +390,18 @@ public class ImageReaderFactory implements Serializable {
         }
         return readerSet.add(param);
     }
-
-    private List<ImageReaderParam> remove(String tsuid) {
-        return mapTransferSyntaxUIDs.remove(tsuid);
+    
+    public List<ImageReaderParam> getForMimeType(String mimeType) {
+        return mapMimeTypes.get(mimeType);
     }
 
-    public Set<Entry<String, List<ImageReaderParam>>> getEntries() {
-        return Collections.unmodifiableMap(mapTransferSyntaxUIDs).entrySet();
-    }
-
-    public void clear() {
-        mapTransferSyntaxUIDs.clear();
+    public boolean putForMimeType(String mimeType, ImageReaderParam param) {
+        List<ImageReaderParam> readerSet = getForMimeType(mimeType);
+        if (readerSet == null) {
+            readerSet = new ArrayList<ImageReaderParam>();
+            mapMimeTypes.put(mimeType, readerSet);
+        }
+        return readerSet.add(param);
     }
 
     public static ImageReaderItem getImageReader(String tsuid) {
@@ -416,51 +423,83 @@ public class ImageReaderFactory implements Serializable {
         }
         return null;
     }
+    
+    public static ImageReaderItem getImageReaderByMimeType(String mimeType) {
+        List<ImageReaderParam> list = getDefault().getForMimeType(mimeType);        
+        if (list != null) {
+            synchronized (list) {
+                for (Iterator<ImageReaderParam> it = list.iterator(); it.hasNext();) {
+                    ImageReaderParam imageParam = it.next();
+                    String cl = imageParam.getClassName();
+                    Iterator<ImageReader> iter = ImageIO.getImageReadersByMIMEType(imageParam.getFormatName());
+                    while (iter.hasNext()) {
+                        ImageReader reader = iter.next();
+                        if (cl == null || reader.getClass().getName().equals(cl)) {
+                            return new ImageReaderItem(reader, imageParam);
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+    
+    public static ImageReader getImageReaderForMimeType(String mimeType) {
+        ImageReaderItem imageReader = getImageReaderByMimeType(mimeType);
+
+        if (imageReader != null) {
+            // configured mime type
+            return imageReader.getImageReader();
+        } else {
+            // not configured mime type, fallback to first ImageIO reader for this mime type
+            ImageReader reader = ImageIO.getImageReadersByMIMEType(mimeType).next();
+            LOG.debug("Using Image Reader {}", reader.getClass());
+            return reader;
+        }
+    }
 
     public static String getNativeSystemSpecification() {
         String val = System.getProperty("native.library.spec");
 
         if (val == null) {
-            // Follows the OSGI specification to use Bundle-NativeCode in the bundle fragment :
+            // Follows the OSGI specification for naming the operating system and processor architecture
             // http://www.osgi.org/Specifications/Reference
-            String osName = System.getProperty("os.name"); //$NON-NLS-1$
-            String osArch = System.getProperty("os.arch"); //$NON-NLS-1$
-            if (osName != null && !osName.trim().equals("") && osArch != null && !osArch.trim().equals("")) { //$NON-NLS-1$ //$NON-NLS-2$
-                if (osName.toLowerCase().startsWith("win")) { //$NON-NLS-1$
-                    // All Windows versions with a specific processor architecture (x86 or x86-64) are grouped under
-                    // windows. If you need to make different native libraries for the Windows versions, define it in
-                    // the Bundle-NativeCode tag of the bundle fragment.
-                    osName = "windows"; //$NON-NLS-1$
-                } else if (osName.equals("Mac OS X")) { //$NON-NLS-1$
-                    osName = "macosx"; //$NON-NLS-1$
-                } else if (osName.equals("SymbianOS")) { //$NON-NLS-1$
-                    osName = "epoc32"; //$NON-NLS-1$
-                } else if (osName.equals("hp-ux")) { //$NON-NLS-1$
-                    osName = "hpux"; //$NON-NLS-1$
-                } else if (osName.equals("Mac OS")) { //$NON-NLS-1$
-                    osName = "macos"; //$NON-NLS-1$
-                } else if (osName.equals("OS/2")) { //$NON-NLS-1$
-                    osName = "os2"; //$NON-NLS-1$
-                } else if (osName.equals("procnto")) { //$NON-NLS-1$
-                    osName = "qnx"; //$NON-NLS-1$
+            String osName = System.getProperty("os.name"); 
+            String osArch = System.getProperty("os.arch"); 
+            if (osName != null && !osName.trim().equals("") && osArch != null && !osArch.trim().equals("")) {  
+                if (osName.toLowerCase().startsWith("win")) { 
+                    // All Windows versions are grouped under windows.
+                    osName = "windows"; 
+                } else if (osName.equals("Mac OS X")) { 
+                    osName = "macosx"; 
+                } else if (osName.equals("SymbianOS")) { 
+                    osName = "epoc32"; 
+                } else if (osName.equals("hp-ux")) { 
+                    osName = "hpux"; 
+                } else if (osName.equals("Mac OS")) { 
+                    osName = "macos"; 
+                } else if (osName.equals("OS/2")) { 
+                    osName = "os2"; 
+                } else if (osName.equals("procnto")) { 
+                    osName = "qnx"; 
                 } else {
                     osName = osName.toLowerCase();
                 }
 
-                if (osArch.equals("pentium") || osArch.equals("i386") || osArch.equals("i486") || osArch.equals("i586") //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$
-                    || osArch.equals("i686")) { //$NON-NLS-1$
-                    osArch = "x86"; //$NON-NLS-1$
-                } else if (osArch.equals("amd64") || osArch.equals("em64t") || osArch.equals("x86_64")) { //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
-                    osArch = "x86-64"; //$NON-NLS-1$
-                } else if (osArch.equals("power ppc")) { //$NON-NLS-1$
-                    osArch = "powerpc"; //$NON-NLS-1$
-                } else if (osArch.equals("psc1k")) { //$NON-NLS-1$
-                    osArch = "ignite"; //$NON-NLS-1$
+                if (osArch.equals("pentium") || osArch.equals("i386") || osArch.equals("i486") || osArch.equals("i586")
+                    || osArch.equals("i686")) { 
+                    osArch = "x86"; 
+                } else if (osArch.equals("amd64") || osArch.equals("em64t") || osArch.equals("x86_64")) {
+                    osArch = "x86-64"; 
+                } else if (osArch.equals("power ppc")) { 
+                    osArch = "powerpc"; 
+                } else if (osArch.equals("psc1k")) { 
+                    osArch = "ignite"; 
                 } else {
                     osArch = osArch.toLowerCase();
                 }
                 val = osName + "-" + osArch;
-                System.setProperty("native.library.spec", val); //$NON-NLS-1$ //$NON-NLS-2$
+                System.setProperty("native.library.spec", val);  
             }
         }
         return val;
