@@ -67,7 +67,7 @@
               <attachToMain>false</attachToMain>
             </configuration>
           </execution>
-          
+
         </executions>
       </plugin>
       <plugin>
@@ -111,6 +111,7 @@
               <descriptors>
                 <descriptor>src/main/assembly/bin.xml</descriptor>
               </descriptors>
+              <attach>true</attach>
             </configuration>
           </execution>
           <execution>
