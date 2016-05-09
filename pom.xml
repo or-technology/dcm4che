@@ -69,9 +69,9 @@
     </developer>
   </developers>
   <scm>
-    <connection>scm:git:ssh://git@ssh.github.com/dcm4che/dcm4che.git</connection>
-    <developerConnection>scm:git:ssh://git@ssh.github.com/dcm4che/dcm4che.git</developerConnection>
-    <url>http://github.com/dcm4che/dcm4che</url>
+    <connection>scm:git:http://orgit/georg.habeck/dcm4che.git</connection>
+    <developerConnection>scm:git:ssh://git@orgit/georg.habeck/dcm4che.git</developerConnection>
+    <url>http://orgit/georg.habeck/dcm4che.git</url>
   </scm>
   <issueManagement>
     <system>JIRA</system>
