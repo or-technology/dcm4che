@@ -36,7 +36,7 @@
    - the terms of any one of the MPL, the GPL or the LGPL.
    -
    - ***** END LICENSE BLOCK *****  -->
-   
+
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.dcm4che</groupId>
@@ -67,9 +67,9 @@
     <url>https://github.com/dcm4che/dcm4che/issues</url>
   </issueManagement>
   <scm>
-    <connection>scm:git:git://github.com/dcm4che.git</connection>
-    <developerConnection>scm:git:git://github.com/dcm4che.git</developerConnection>
-    <url>http://github.com/dcm4che/dcm4che</url>
+    <connection>scm:git:http://orgit/common/dcm4che.git</connection>
+    <developerConnection>scm:git:ssh://git@orgit/common/dcm4che.git</developerConnection>
+    <url>http://orgit/common/dcm4che.git</url>
   </scm>
   <organization>
     <name>dcm4che.org</name>
@@ -200,10 +200,15 @@
   </modules>
   <distributionManagement>
     <repository>
-      <id>www.dcm4che.org</id>
-      <name>dcm4che Repository</name>
-      <url>scp://www.dcm4che.org/home/maven2</url>
+      <id>nexus</id>
+      <name>Local Nexus 3rd Party Release Repository</name>
+      <url>http://ormaven/content/repositories/ext-release-local/</url>
     </repository>
+    <snapshotRepository>
+      <id>nexus</id>
+      <name>Local Nexus 3rd Party Snapshot Repository</name>
+      <url>http://ormaven/content/repositories/ext-snapshot-local/</url>
+    </snapshotRepository>
   </distributionManagement>
   <repositories>
     <repository>
