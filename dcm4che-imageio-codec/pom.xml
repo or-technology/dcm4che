@@ -10,7 +10,7 @@
 	<name>dcm4che-imageio-codec</name>
 
 	<properties>
-		<weasis.version>2.5.0-SNAPSHOT</weasis.version>
+		<weasis.version>2.5.0</weasis.version>
 		<jpeg.version>1.0.3-6b</jpeg.version>
 		<openjpeg.version>2.1.4</openjpeg.version>
 
@@ -115,7 +115,7 @@
 			<version>${weasis.version}</version>
 			<type>jar</type>
 		</dependency>
-		
+
 		<!-- ******** JPEG native codecs ******** -->
 		<dependency>
 			<groupId>org.weasis.thirdparty.jpeg</groupId>
