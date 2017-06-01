@@ -163,6 +163,11 @@
       <name>Local Nexus 3rd Party Release Repository</name>
       <url>http://ormaven/content/repositories/ext-release-local/</url>
     </repository>
+    <snapshotRepository>
+      <id>nexus</id>
+      <name>Local Nexus 3rd Party Snapshot Repository</name>
+      <url>http://ormaven/content/repositories/ext-snapshot-local/</url>
+    </snapshotRepository>
   </distributionManagement>
   <repositories>
     <repository>

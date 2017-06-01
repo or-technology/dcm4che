@@ -10,16 +10,16 @@
 	<name>dcm4che-imageio-codec</name>
 
 	<properties>
-		<weasis.version>2.5.0</weasis.version>
+		<weasis.version>2.5.3</weasis.version>
 		<jpeg.version>1.0.3-6b</jpeg.version>
-		<openjpeg.version>2.1.4</openjpeg.version>
+		<openjpeg.version>2.1.5</openjpeg.version>
 
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 	</properties>
 	<repositories>
 		<repository>
 			<id>weasis</id>
-			<url>http://dicom.vital-it.ch:8087/nexus/content/groups/public</url>
+			<url>http://ormaven/content/groups/public</url>
 		</repository>
 	</repositories>
 	<build>
