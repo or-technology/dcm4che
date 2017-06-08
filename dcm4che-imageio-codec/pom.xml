@@ -11,15 +11,19 @@
 
 	<properties>
 		<weasis.version>2.5.3</weasis.version>
-		<jpeg.version>1.0.3-6b</jpeg.version>
+		<jpeg.version>1.0.7-6b</jpeg.version>
 		<openjpeg.version>2.1.5</openjpeg.version>
 
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 	</properties>
 	<repositories>
 		<repository>
-			<id>weasis</id>
+			<id>nexus</id>
 			<url>http://ormaven/content/groups/public</url>
+		</repository>
+		<repository>
+			<id>weasis</id>
+			<url>https://raw.githubusercontent.com/nroduit/mvn-repo/master</url>
 		</repository>
 	</repositories>
 	<build>
