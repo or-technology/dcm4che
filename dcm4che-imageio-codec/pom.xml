@@ -23,7 +23,7 @@
 		</repository>
 		<repository>
 			<id>weasis</id>
-			<url>https://raw.githubusercontent.com/nroduit/mvn-repo/master</url>
+			<url>http://ormaven/content/repositories/nrodruit-releases/</url>
 		</repository>
 	</repositories>
 	<build>
