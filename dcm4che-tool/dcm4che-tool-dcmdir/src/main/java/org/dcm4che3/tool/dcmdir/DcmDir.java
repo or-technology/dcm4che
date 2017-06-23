@@ -516,6 +516,8 @@ public class DcmDir {
             prompt = 'F';
         }
         String iuid = fmi.getString(Tag.MediaStorageSOPInstanceUID, null);
+        if (iuid == null)
+            iuid = dataset.getString(Tag.SOPInstanceUID, null);
         if (iuid == null) {
             System.out.println();
             System.out.println(MessageFormat.format(
