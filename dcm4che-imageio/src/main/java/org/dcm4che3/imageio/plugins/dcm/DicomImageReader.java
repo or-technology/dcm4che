@@ -42,6 +42,7 @@ import java.awt.image.BufferedImage;
 import java.awt.image.ColorModel;
 import java.awt.image.DataBuffer;
 import java.awt.image.DataBufferByte;
+import java.awt.image.DataBufferShort;
 import java.awt.image.DataBufferUShort;
 import java.awt.image.Raster;
 import java.awt.image.SampleModel;
@@ -163,6 +164,8 @@ public class DicomImageReader extends ImageReader implements Closeable {
     private PhotometricInterpretation pmi;
     private PhotometricInterpretation pmiAfterDecompression;
     private ImageDescriptor imageDescriptor;
+
+    private int pixelRepresentation;
 
     public DicomImageReader(ImageReaderSpi originatingProvider) {
         super(originatingProvider);
@@ -399,8 +402,14 @@ public class DicomImageReader extends ImageReader implements Closeable {
                         iis.readFully(bs);
                 if (pixelDataVR == VR.OW && bigEndian())
                     ByteUtils.swapShorts(data);
-            } else {
+            } else if (buf instanceof DataBufferUShort) {
                 short[] data = ((DataBufferUShort) buf).getData();
+                if (dis != null)
+                    dis.readFully(data, 0, data.length);
+                else
+                    iis.readFully(data, 0, data.length);
+            } else if (buf instanceof DataBufferShort) {
+                short[] data = ((DataBufferShort) buf).getData();
                 if (dis != null)
                     dis.readFully(data, 0, data.length);
                 else
@@ -765,8 +774,9 @@ public class DicomImageReader extends ImageReader implements Closeable {
             banded = samples > 1 && ds.getInt(Tag.PlanarConfiguration, 0) != 0;
             bitsAllocated = ds.getInt(Tag.BitsAllocated, 8);
             bitsStored = ds.getInt(Tag.BitsStored, bitsAllocated);
-            dataType = bitsAllocated <= 8 ? DataBuffer.TYPE_BYTE 
-                                          : DataBuffer.TYPE_USHORT;
+            pixelRepresentation = ds.getInt(Tag.PixelRepresentation, 0);
+            dataType = bitsAllocated <= 8 ? DataBuffer.TYPE_BYTE
+                    : (pixelRepresentation == 1 ? DataBuffer.TYPE_SHORT : DataBuffer.TYPE_USHORT);
             pmi = PhotometricInterpretation.fromString(
                     ds.getString(Tag.PhotometricInterpretation, "MONOCHROME2"));
             if (pixelDataLength != -1) {
