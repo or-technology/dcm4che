@@ -51,18 +51,17 @@ public abstract class ElementDictionary {
         this.tagClass = tagClass;
     }
 
-    private static ElementDictionary standardElementDictionary = StandardElementDictionary.INSTANCE;
+    private static ElementDictionary standardElementDictionary = null;
 
     public static ElementDictionary getStandardElementDictionary() {
-        return standardElementDictionary;
+        if (standardElementDictionary == null)
+            return StandardElementDictionary.INSTANCE;
+        else
+            return standardElementDictionary;
     }
 
-    public static void setStandardElementDictionary(ElementDictionary dictionary)
-    {
-        if (dictionary != null)
-            standardElementDictionary = dictionary;
-        else
-            standardElementDictionary = StandardElementDictionary.INSTANCE;
+    public static void setStandardElementDictionary(ElementDictionary dictionary) {
+        standardElementDictionary = dictionary;
     }
 
     public static ElementDictionary getElementDictionary(
