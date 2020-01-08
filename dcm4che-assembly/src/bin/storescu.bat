@@ -59,7 +59,9 @@ set CP=%CP%;%DCM4CHE_HOME%\lib\log4j-${log4j.version}.jar
 set CP=%CP%;%DCM4CHE_HOME%\lib\commons-cli-${commons-cli.version}.jar
 
 rem Setup native library path
-"%JAVA%" -d64 -version >nul 2>&1 && set OS=win-x86_64 || set OS=win-i686
+rem There mustn't be a space before the || operator, as that would cause
+rem the library path to get corrupted for 64-bit VMs
+"%JAVA%" -version 2>&1 | findstr 64-Bit >nul && set OS=win-x86_64|| set OS=win-i686
 set JAVA_LIBRARY_PATH="%DCM4CHE_HOME%\lib\%OS%"
 
 set JAVA_OPTS=%JAVA_OPTS% -Djava.library.path=%JAVA_LIBRARY_PATH%
