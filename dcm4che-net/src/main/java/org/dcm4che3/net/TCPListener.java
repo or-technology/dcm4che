@@ -43,6 +43,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.security.GeneralSecurityException;
+import java.util.concurrent.TimeUnit;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
@@ -56,31 +57,40 @@ import javax.net.ssl.SSLSocket;
 class TCPListener implements Listener {
 
     private final Connection conn;
+
     private final TCPProtocolHandler handler;
+
     private final ServerSocket ss;
 
-    public TCPListener(Connection conn, TCPProtocolHandler handler)
-            throws IOException, GeneralSecurityException {
-        try {
-        
+    public TCPListener(Connection conn, TCPProtocolHandler handler) throws IOException,
+            GeneralSecurityException
+    {
+        try
+        {
+
             this.conn = conn;
             this.handler = handler;
             ss = conn.isTls() ? createTLSServerSocket(conn) : new ServerSocket();
             conn.setReceiveBufferSize(ss);
             ss.bind(conn.getBindPoint(), conn.getBacklog());
-            conn.getDevice().execute(new Runnable(){
-    
+            conn.getDevice().execute(new Runnable() {
+
                 @Override
-                public void run() { listen(); }
+                public void run()
+                {
+                    listen();
+                }
             });
-        
-        } catch (IOException e) {
-            throw new IOException("Unable to start TCPListener on "+conn.getHostname()+":"+conn.getPort(), e);
+
+        } catch (IOException e)
+        {
+            throw new IOException("Unable to start TCPListener on " + conn.getHostname() + ":" + conn
+                    .getPort(), e);
         }
     }
 
-    private ServerSocket createTLSServerSocket(Connection conn)
-            throws IOException, GeneralSecurityException {
+    private ServerSocket createTLSServerSocket(Connection conn) throws IOException, GeneralSecurityException
+    {
         SSLContext sslContext = conn.getDevice().sslContext();
         SSLServerSocketFactory ssf = sslContext.getServerSocketFactory();
         SSLServerSocket ss = (SSLServerSocket) ssf.createServerSocket();
@@ -90,31 +100,51 @@ class TCPListener implements Listener {
         return ss;
     }
 
-    private void listen() {
+    private void listen()
+    {
         SocketAddress sockAddr = ss.getLocalSocketAddress();
         Connection.LOG.info("Start TCP Listener on {}", sockAddr);
-        try {
-            while (!ss.isClosed()) {
+        try
+        {
+            while (!ss.isClosed())
+            {
                 Connection.LOG.debug("Wait for connection on {}", sockAddr);
                 Socket s = ss.accept();
-                ConnectionMonitor monitor = conn.getDevice() != null
-                        ? conn.getDevice().getConnectionMonitor()
+                ConnectionMonitor monitor = conn.getDevice() != null ? conn.getDevice().getConnectionMonitor()
                         : null;
-                if (conn.isBlackListed(s.getInetAddress())) {
+                if (conn.isBlackListed(s.getInetAddress()))
+                {
                     if (monitor != null)
                         monitor.onConnectionRejectedBlacklisted(conn, s);
                     Connection.LOG.info("Reject blacklisted connection {}", s);
                     conn.close(s);
-                } else {
-                    try {
+                } else
+                {
+                    try
+                    {
                         conn.setSocketSendOptions(s);
-                        if (s instanceof SSLSocket) {
-                            ((SSLSocket) s).startHandshake();
+                        if (s instanceof SSLSocket)
+                        {
+                            final SSLSocket sslSocket = (SSLSocket) s;
+                            TimeLimitedCodeBlock.runWithTimeout(new Runnable() {
+
+                                public void run()
+                                {
+                                    try
+                                    {
+                                        sslSocket.startHandshake();
+                                    } catch (IOException ex)
+                                    {
+                                        throw new RuntimeException(ex);
+                                    }
+                                }
+                            }, 100, TimeUnit.MILLISECONDS);
                         }
-                    } catch (Throwable e) {
+                    } catch (Throwable e)
+                    {
                         if (monitor != null)
                             monitor.onConnectionRejected(conn, s, e);
-                        Connection.LOG.warn("Reject connection {}:",s, e);
+                        Connection.LOG.warn("Reject connection {}:", s, e);
                         conn.close(s);
                         continue;
                     }
@@ -122,32 +152,38 @@ class TCPListener implements Listener {
                     if (monitor != null)
                         monitor.onConnectionAccepted(conn, s);
                     Connection.LOG.info("Accept connection {}", s);
-                    try {
+                    try
+                    {
                         handler.onAccept(conn, s);
-                    } catch (Throwable e) {
-                        Connection.LOG.warn("Exception on accepted connection {}:",s, e);
+                    } catch (Throwable e)
+                    {
+                        Connection.LOG.warn("Exception on accepted connection {}:", s, e);
                         conn.close(s);
                     }
                 }
             }
-        } catch (Throwable e) {
+        } catch (Throwable e)
+        {
             if (!ss.isClosed()) // ignore exception caused by close()
                 Connection.LOG.error("Exception on listing on {}:", sockAddr, e);
         }
         Connection.LOG.info("Stop TCP Listener on {}", sockAddr);
     }
 
-
     @Override
-    public SocketAddress getEndPoint() {
+    public SocketAddress getEndPoint()
+    {
         return ss.getLocalSocketAddress();
     }
 
     @Override
-    public void close() throws IOException {
-         try {
+    public void close() throws IOException
+    {
+        try
+        {
             ss.close();
-        } catch (Throwable e) {
+        } catch (Throwable e)
+        {
             // Ignore errors when closing the server socket.
         }
     }
