@@ -132,7 +132,10 @@ class TCPListener implements Listener {
                                 {
                                     try
                                     {
+                                        long start = System.currentTimeMillis();
                                         sslSocket.startHandshake();
+                                        System.out.println("ssl handshake took " + (System.currentTimeMillis()
+                                                - start) + "ms");
                                     } catch (IOException ex)
                                     {
                                         throw new RuntimeException(ex);
