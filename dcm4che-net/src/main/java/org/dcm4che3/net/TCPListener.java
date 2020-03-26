@@ -124,25 +124,7 @@ class TCPListener implements Listener {
                     {
                         conn.setSocketSendOptions(s);
                         if (s instanceof SSLSocket)
-                        {
-                            final SSLSocket sslSocket = (SSLSocket) s;
-                            TimeLimitedCodeBlock.runWithTimeout(new Runnable() {
-
-                                public void run()
-                                {
-                                    try
-                                    {
-                                        long start = System.currentTimeMillis();
-                                        sslSocket.startHandshake();
-                                        System.out.println("ssl handshake took " + (System.currentTimeMillis()
-                                                - start) + "ms");
-                                    } catch (IOException ex)
-                                    {
-                                        throw new RuntimeException(ex);
-                                    }
-                                }
-                            }, 100, TimeUnit.MILLISECONDS);
-                        }
+                            startTlsHandshake(s);
                     } catch (Throwable e)
                     {
                         if (monitor != null)
@@ -171,6 +153,34 @@ class TCPListener implements Listener {
                 Connection.LOG.error("Exception on listing on {}:", sockAddr, e);
         }
         Connection.LOG.info("Stop TCP Listener on {}", sockAddr);
+    }
+
+    protected void startTlsHandshake(Socket s) throws Exception, IOException
+    {
+        final SSLSocket sslSocket = (SSLSocket) s;
+        if (conn.getConnectTimeout() > 0)
+            TimeLimitedCodeBlock.runWithTimeout(new Runnable() {
+
+                public void run()
+                {
+                    try
+                    {
+                        long start = System.currentTimeMillis();
+                        sslSocket.startHandshake();
+                        System.out.println("ssl handshake took " + (System.currentTimeMillis() - start)
+                                + "ms");
+                    } catch (IOException ex)
+                    {
+                        throw new RuntimeException(ex);
+                    }
+                }
+            }, conn.getConnectTimeout(), TimeUnit.MILLISECONDS);
+        else
+        {
+            long start = System.currentTimeMillis();
+            sslSocket.startHandshake();
+            System.out.println("ssl handshake took " + (System.currentTimeMillis() - start) + "ms");
+        }
     }
 
     @Override
