@@ -52,7 +52,6 @@ import org.dcm4che3.data.Tag;
 import org.dcm4che3.data.UID;
 import org.dcm4che3.imageio.codec.jpeg.JPEGParser;
 import org.dcm4che3.io.DicomInputStream;
-import org.dcm4che3.util.Property;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -168,19 +167,19 @@ public class TranscoderTest {
         assertEquals(12, jpegBitsPerSample("MR2_UNC-JPLL.dcm"));
     }
 
-//    @Test - not supported by NativeJLSImageWriter
+    @Test
     public void testCompress12BitsJLSL() throws Exception {
         test("MR2_UNC", "MR2_UNC-JLSL.dcm", UID.JPEGLSLossless, true);
         assertEquals(12, jpegBitsPerSample("MR2_UNC-JLSL.dcm"));
     }
 
-//    @Test - not supported by NativeJ2kImageWriter
+    @Test
     public void testCompress12BitsJ2KR() throws Exception {
         test("MR2_UNC", "MR2_UNC-J2KR.dcm", UID.JPEG2000LosslessOnly, true);
         assertEquals(12, jpegBitsPerSample("MR2_UNC-J2KR.dcm"));
     }
 
-//    @Test - broken
+    @Test
     public void testSigned12BitsJ2KI() throws Exception {
         test("test16signed.dcm", "test16signed-J2KI.dcm", UID.JPEG2000, true);
         assertEquals(1, jpegPixelRepresentation("test16signed-J2KI.dcm"));
@@ -211,7 +210,7 @@ public class TranscoderTest {
         }
     }
 
-    private void test(String ifname, String ofname, final String outts, boolean fmi, Property... compressParams)
+    private void test(String ifname, String ofname, final String outts, boolean fmi)
             throws IOException {
         final File ifile = new File("target/test-data/" + ifname);
         final File ofile = new File("target/test-out/" + ofname);
@@ -224,11 +223,7 @@ public class TranscoderTest {
         try (Transcoder transcoder = new Transcoder(ifile)) {
             transcoder.setIncludeFileMetaInformation(fmi);
             transcoder.setIncludeBulkData(DicomInputStream.IncludeBulkData.URI);
-            boolean transcodeNotRequired = transcoder.getDestinationTransferSyntax().equals(outts);
             transcoder.setDestinationTransferSyntax(outts);
-            if (!transcodeNotRequired && TransferSyntaxType.forUID(outts).isPixeldataEncapsulated()) {
-                transcoder.setCompressParams(compressParams);
-            }
             transcoder.transcode(handler);
         }
     }

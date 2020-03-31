@@ -55,7 +55,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * @author Gunter Zeilinger <gunterze@gmail.com>
+ * @author Gunter Zeilinger (gunterze@protonmail.com)
  */
 public class Attributes implements Serializable {
 
@@ -415,7 +415,7 @@ public class Attributes implements Serializable {
             index = -index-1;
         while (index < size && (tags[index] & 0xffffff00) == group) {
             creatorTag = tags[index];
-            if (vrs[index] == VR.LO) {
+            if (vrs[index].isStringType()) {
                 Object creatorID = decodeStringValue(index);
                 if (privateCreator.equals(creatorID))
                     return creatorTag;
@@ -597,14 +597,14 @@ public class Attributes implements Serializable {
 
         int creatorTag = (tag & 0xffff0000) | ((tag >>> 8) & 0xff);
         int index = indexOf(creatorTag);
-        if (index < 0 || vrs[index] != VR.LO || values[index] == Value.NULL)
-            return null;
-        
-        Object value = decodeStringValue(index);
-        if (value == Value.NULL)
-            return null;
+        return privateCreatorAt(index);
+    }
 
-        return VR.LO.toString(value, false, 0, null);
+    private String privateCreatorAt(int index) {
+        Object value;
+        return (index < 0 || !vrs[index].isStringType() || (value = decodeStringValue(index)) == Value.NULL)
+            ? null
+            : VR.LO.toString(value, false, 0, null);
     }
 
     public Object getValue(int tag) {
@@ -2095,6 +2095,14 @@ public class Attributes implements Serializable {
         if (updatePolicy == UpdatePolicy.REPLACE)
             throw new IllegalArgumentException("updatePolicy:" + updatePolicy);
 
+        if (!isEmpty() &&
+                !isSpecificCharacterSetCompatible(other, include, exclude, fromIndex, toIndex, selection, updatePolicy))
+            throw new IncompatibleSpecificCharaterSetException("Specific Character Sets " +
+                    Arrays.toString(getSpecificCharacterSet().toCodes()) +
+                    " and " +
+                    Arrays.toString(other.getSpecificCharacterSet().toCodes()) +
+                    " not compatible");
+
         boolean toggleEndian = bigEndian != other.bigEndian;
         boolean modifiedToggleEndian = modified != null
                 && bigEndian != modified.bigEndian;
@@ -2116,8 +2124,7 @@ public class Attributes implements Serializable {
                 continue;
 
             if (TagUtils.isPrivateCreator(tag)
-                    && vr == VR.LO
-                    && (privateCreator = (String) other.decodeStringValue(i)) != null) {
+                    && (privateCreator = other.privateCreatorAt(i)) != null) {
                 if ((selection == null || selection.creatorTagOf(privateCreator, tag, false) > 0)
                         && creatorTagOf(privateCreator, tag, false) < 0
                         && !contains(tag)) {    // preserve non-conflicting Private Creator ID tag positions
@@ -2190,6 +2197,56 @@ public class Attributes implements Serializable {
         return numAdd != 0;
     }
 
+    private boolean isSpecificCharacterSetCompatible(Attributes other,
+            int[] include, int[] exclude, int fromIndex, int toIndex,
+            Attributes selection, UpdatePolicy updatePolicy) {
+        return isUpdateSpecificCharacterSet(other, include, exclude, fromIndex, toIndex, selection, updatePolicy)
+                ? other.getSpecificCharacterSet().contains(getSpecificCharacterSet())
+                    || !containsNonASCIIStringValues()
+                : getSpecificCharacterSet().contains(other.getSpecificCharacterSet())
+                    || !other.containsNonASCIIStringValues();
+    }
+
+    private boolean containsNonASCIIStringValues() {
+        for (int i = 0; i < size; i++) {
+            Object val = values[i];
+            if (val instanceof Sequence) {
+                for (Attributes item : ((Sequence) val)) {
+                    if (item.containsNonASCIIStringValues()) {
+                        return true;
+                    }
+                }
+            } else if (val != Value.NULL && vrs[i].useSpecificCharacterSet()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isUpdateSpecificCharacterSet(Attributes other,
+            int[] include, int[] exclude, int fromIndex, int toIndex,
+            Attributes selection, UpdatePolicy updatePolicy) {
+        String[] oscs = other.getStrings(Tag.SpecificCharacterSet);
+        if (oscs == null)
+            return false;
+
+        if (updatePolicy != null)
+            switch (updatePolicy) {
+                case PRESERVE:
+                    return false;
+                case SUPPLEMENT:
+                    if (containsValue(Tag.SpecificCharacterSet))
+                        return false;
+                case MERGE:
+                    if (oscs.length == 0)
+                        return false;;
+            }
+
+        return (include == null || Arrays.binarySearch(include, fromIndex, toIndex, Tag.SpecificCharacterSet) >= 0)
+            && (exclude == null || Arrays.binarySearch(exclude, fromIndex, toIndex, Tag.SpecificCharacterSet) < 0)
+            && (selection == null || selection.contains(Tag.SpecificCharacterSet));
+    }
+
     private void mergeOriginalAttributesSequence(Sequence src, Sequence dest) {
         Map<String,Attributes> sort = new TreeMap<>();
         for (Attributes destItem : dest) {
@@ -2200,8 +2257,12 @@ public class Attributes implements Serializable {
             String dt = srcItem.getString(Tag.AttributeModificationDateTime);
             Attributes destItem = sort.get(dt);
             if (destItem != null) {
-                destItem.getNestedDataset(Tag.ModifiedAttributesSequence)
-                        .addAll(srcItem.getNestedDataset(Tag.ModifiedAttributesSequence));
+                try {
+                    destItem.getNestedDataset(Tag.ModifiedAttributesSequence)
+                            .addAll(srcItem.getNestedDataset(Tag.ModifiedAttributesSequence));
+                } catch (IncompatibleSpecificCharaterSetException e) {
+                    LOG.info("Failed to merge original attributes modified at {}: {}", dt, e.getMessage());
+                }
             } else {
                 sort.put(srcItem.getString(Tag.AttributeModificationDateTime), new Attributes(srcItem));
             }
@@ -3350,7 +3411,7 @@ public class Attributes implements Serializable {
         if (index < 0)
             index = -index-1;
         while (index < size && (tags[index] & 0xffffff00) == group) {
-            if (vrs[index] == VR.LO) {
+            if (vrs[index].isStringType()) {
                 Object creatorID = decodeStringValue(index);
                 if (privateCreator.equals(creatorID))
                     return index;

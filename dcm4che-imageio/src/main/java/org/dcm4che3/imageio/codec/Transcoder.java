@@ -312,11 +312,13 @@ public class Transcoder implements Closeable {
         LOG.debug("Compressor: {}", compressor.getClass().getName());
 
         this.compressParam = compressor.getDefaultWriteParam();
+        setCompressParams(compressorParam.getImageWriteParams());
     }
 
-    public void setCompressParams(Property[] imageWriteParams) {
+    public void setCompressParams(Property... imageWriteParams) {
+        if (compressorParam == null) return;
         int count = 0;
-        for (Property property : cat(compressorParam.getImageWriteParams(), imageWriteParams)) {
+        for (Property property : imageWriteParams) {
             String name = property.getName();
             if (name.equals("maxPixelValueError"))
                 this.maxPixelValueError = ((Number) property.getValue()).intValue();
@@ -546,6 +548,14 @@ public class Transcoder implements Closeable {
                 dataset.setInt(Tag.PlanarConfiguration, VR.US, destTransferSyntaxType.getPlanarConfiguration());
             if (lossyCompression) {
                 dataset.setString(Tag.LossyImageCompression, VR.CS, "01");
+				if ("jpeg2000-cv".equals(compressorParam.formatName)) {
+					for (Property p : compressorParam.getImageWriteParams()) {
+						if ("compressionRatiofactor".equals(p.getName())) {
+							dataset.setFloat(Tag.LossyImageCompressionRatio, VR.DS, ((Double) p.getValue()).floatValue());
+							break;
+						}
+					}
+				}
             }
         }
     }
@@ -809,17 +819,6 @@ public class Transcoder implements Closeable {
                 fmi.setString(Tag.TransferSyntaxUID, VR.UI, destTransferSyntax);
         }
         dos.writeDataset(fmi, dataset);
-    }
-
-    private Property[] cat(Property[] a, Property[] b) {
-        if (a.length == 0)
-            return b;
-        if (b.length == 0)
-            return a;
-        Property[] c = new Property[a.length + b.length];
-        System.arraycopy(a, 0, c, 0, a.length);
-        System.arraycopy(b, 0, c, a.length, b.length);
-        return c;
     }
 
     private void initBufferedImage() {

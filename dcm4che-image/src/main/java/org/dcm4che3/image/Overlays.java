@@ -103,7 +103,7 @@ public class Overlays {
         return Arrays.copyOf(result, len);
     }
 
-   public static void extractFromPixeldata(Raster raster, int mask, 
+    public static void extractFromPixeldata(Raster raster, int mask,
             byte[] ovlyData, int off, int length) {
         ComponentSampleModel sm = (ComponentSampleModel) raster.getSampleModel();
         int rows = raster.getHeight();
@@ -157,8 +157,41 @@ public class Overlays {
         }
     }
 
-    public static int getRecommendedDisplayGrayscaleValue(Attributes psAttrs,
-            int gg0000) {
+    public static int[] getRecommendedGrayscalePixelValue(Attributes psAttrs, int gg0000, int bits) {
+        int[] grayscaleValue = getRecommendedPixelValue(Tag.RecommendedDisplayGrayscaleValue, psAttrs, gg0000);
+        return grayscaleValue != null && grayscaleValue.length > 0
+                ? new int[] { grayscaleValue[0] >> (16 - bits) }
+                : null;
+    }
+
+    public static int[] getRecommendedRGBPixelValue(Attributes psAttrs, int gg0000) {
+        int[] cieLabValue = getRecommendedPixelValue(Tag.RecommendedDisplayCIELabValue, psAttrs, gg0000);
+        return cieLabValue != null && cieLabValue.length == 3
+                ? cieLab2RGB(cieLabValue)
+                : null;
+    }
+
+    private static int[] cieLab2RGB(int[] cieLabValue) {
+        float[] rgb = CIELabColorSpace.getInstance().toRGB(new float[]{
+                scaleCIELabL(cieLabValue[0]),
+                scaleCIELabAB(cieLabValue[1]),
+                scaleCIELabAB(cieLabValue[2])});
+        return new int[] { unscaleRGB(rgb[0]), unscaleRGB(rgb[1]), unscaleRGB(rgb[2])};
+    }
+
+    private static int unscaleRGB(float value) {
+        return Math.min((int) (value * 256), 255);
+    }
+
+    private static float scaleCIELabL(int cieLabValue) {
+        return (cieLabValue & 0xffff) / 655.35f;
+    }
+
+    private static float scaleCIELabAB(int cieLabValue) {
+        return ((cieLabValue & 0xffff) - 0x8080) / 257.0f;
+    }
+
+    private static int[] getRecommendedPixelValue(int tag, Attributes psAttrs, int gg0000) {
         int tagOverlayActivationLayer = Tag.OverlayActivationLayer | gg0000;
         String layerName = psAttrs.getString(tagOverlayActivationLayer);
         if (layerName == null)
@@ -173,14 +206,18 @@ public class Overlays {
         
         for (Attributes layer : layers)
             if (layerName.equals(layer.getString(Tag.GraphicLayer)))
-                return layer.getInt(Tag.RecommendedDisplayGrayscaleValue, -1);
+                return layer.getInts(tag);
 
         throw new IllegalArgumentException("No Graphic Layer: " + layerName);
     }
 
     public static void applyOverlay(int frameIndex, WritableRaster raster,
             Attributes attrs, int gg0000, int pixelValue, byte[] ovlyData) {
+        applyOverlay(frameIndex, raster, attrs, gg0000, new int[] { pixelValue }, ovlyData);
+    }
 
+    public static void applyOverlay(int frameIndex, WritableRaster raster,
+            Attributes attrs, int gg0000, int[] pixelValue, byte[] ovlyData) {
         int imageFrameOrigin = attrs.getInt(Tag.ImageFrameOrigin | gg0000, 1);
         int framesInOverlay = attrs.getInt(Tag.NumberOfFramesInOverlay | gg0000, 1);
         int ovlyFrameIndex = frameIndex - imageFrameOrigin  + 1;
@@ -238,7 +275,7 @@ public class Overlays {
                 int y = y0 + ovlyIndex / ovlyColumns;
                 int x = x0 + ovlyIndex % ovlyColumns;
                 try {
-                    raster.setSample(x, y, 0, pixelValue);
+                    raster.setPixel(x, y, pixelValue);
                 } catch (ArrayIndexOutOfBoundsException ignore) {}
             }
         }
