@@ -156,6 +156,18 @@ public abstract class StreamSegment {
                         }
                     }
                 }
+                if (fstream == null)
+                {
+                    // handle SegmentedInputImageStream without stream (created with a backing byte buffer)
+                    long[][] seg = getSegments(iis, clazz, fCurSegment);
+                    if (seg != null)
+                    {
+                        int offset = (int) seg[0][0];
+                        byte[] b = new byte[(int) (seg[1][0] - seg[0][0])];
+                        iis.read(b, offset, b.length);
+                        return new MemoryStreamSegment(ByteBuffer.wrap(b), iis.getImageDescriptor());
+                    }
+                }
                 LOGGER.error("Cannot read SegmentedInputImageStream with {} ", fstream.getClass());
             }
         } catch (Exception e) {
