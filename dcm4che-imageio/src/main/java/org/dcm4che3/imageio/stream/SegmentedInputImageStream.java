@@ -81,8 +81,11 @@ public class SegmentedInputImageStream extends ImageInputStreamImpl {
      */
     public SegmentedInputImageStream(ImageInputStream stream,
             Fragments pixeldataFragments, int frameIndex) throws IOException {
-        if( frameIndex==-1 ) {
+        if (frameIndex == -1)
+        {
             frameIndex = 0;
+            if (stream == null)
+                lastSegment = 2;
         } else {
             firstSegment = frameIndex+1;
             lastSegment = frameIndex+2;
@@ -242,10 +245,17 @@ public class SegmentedInputImageStream extends ImageInputStreamImpl {
             return -1;
 
         bitOffset = 0;
-        int val = stream.read();
-        if (val != -1) {
-            ++streamPos;
-        }
+        int val;
+        if (byteFrag != null)
+        {
+            if (streamPos < byteFrag.length)
+            {
+                val = byteFrag[(int) streamPos];
+                ++streamPos;
+            } else
+                val = -1;
+        } else
+            val = stream.read();
         return val;
     }
 
@@ -326,6 +336,12 @@ public class SegmentedInputImageStream extends ImageInputStreamImpl {
     @Override
     public long length() {
         try {
+            if (fragments instanceof Fragments)
+            {
+                Fragments frags = (Fragments) fragments;
+                byte[] data = (byte[]) frags.get(1);
+                return data.length;
+            }
             long wasPos = this.getStreamPosition();
             seek(Long.MAX_VALUE);
             long ret = this.getStreamPosition();
