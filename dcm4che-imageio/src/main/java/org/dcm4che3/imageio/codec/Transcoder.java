@@ -103,6 +103,8 @@ public class Transcoder implements Closeable {
 
     private boolean includeFileMetaInformation;
 
+    private boolean nullifyPixelData;
+
     private DicomEncodingOptions encOpts = DicomEncodingOptions.DEFAULT;
 
     private boolean closeInputStream = true;
@@ -122,6 +124,8 @@ public class Transcoder implements Closeable {
     private int maxPixelValueError = -1;
 
     private int avgPixelValueBlockSize = 1;
+
+    private Attributes fileMetaInformation;
 
     private DicomOutputStream dos;
 
@@ -248,6 +252,14 @@ public class Transcoder implements Closeable {
         this.retainFileMetaInformation = retainFileMetaInformation;
     }
 
+    public boolean isNullifyPixelData() {
+        return nullifyPixelData;
+    }
+
+    public void setNullifyPixelData(boolean nullifyPixelData) {
+        this.nullifyPixelData = nullifyPixelData;
+    }
+
     public ImageDescriptor getImageDescriptor() {
         return imageDescriptor;
     }
@@ -290,6 +302,14 @@ public class Transcoder implements Closeable {
         return dis.getBulkDataFiles();
     }
 
+    /**
+     * Returns {@code Attributes} of File Meta Information written to {@code OutputStream} or {@code null}.
+     * @return {@code Attributes} of File Meta Information written to {@code OutputStream} or {@code null}.
+     */
+    public Attributes getFileMetaInformation() {
+        return fileMetaInformation;
+    }
+
     private void initDecompressor() {
         decompressorParam = ImageReaderFactory.getImageReaderParam(srcTransferSyntax);
         if (decompressorParam == null)
@@ -317,7 +337,6 @@ public class Transcoder implements Closeable {
 
     public void setCompressParams(Property... imageWriteParams) {
         if (compressorParam == null) return;
-        int count = 0;
         for (Property property : imageWriteParams) {
             String name = property.getName();
             if (name.equals("maxPixelValueError"))
@@ -327,7 +346,7 @@ public class Transcoder implements Closeable {
             else if (name.equals("bitsCompressed"))
                 this.bitsCompressed = ((Number) property.getValue()).intValue();
             else {
-                if (count++ == 0)
+                if (compressParam.getCompressionMode() != ImageWriteParam.MODE_EXPLICIT)
                     compressParam.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
                 property.setAt(compressParam);
             }
@@ -384,10 +403,15 @@ public class Transcoder implements Closeable {
         public void readValue(DicomInputStream dis, Attributes attrs) throws IOException {
             int tag = dis.tag();
             if (dis.level() == 0 && tag == Tag.PixelData) {
-                imageDescriptor = new ImageDescriptor(attrs, bitsCompressed);
-                initDicomOutputStream();
-                processPixelData();
-                postPixelData = new Attributes(dis.bigEndian());
+                if (nullifyPixelData) {
+                    dataset.setNull(Tag.PixelData, dis.vr());
+                    skipPixelData();
+                } else {
+                    imageDescriptor = new ImageDescriptor(attrs, bitsCompressed);
+                    initDicomOutputStream();
+                    processPixelData();
+                    postPixelData = new Attributes(dis.bigEndian());
+                }
             } else {
                 dis.readValue(dis, attrs);
                 if (postPixelData != null && dis.level() == 0)
@@ -403,7 +427,10 @@ public class Transcoder implements Closeable {
         @Override
         public void readValue(DicomInputStream dis, Fragments frags) throws IOException {
             if (dos == null) {
-                dis.readValue(dis, frags);
+                if (nullifyPixelData)
+                    StreamUtils.skipFully(dis, dis.length());
+                else
+                    dis.readValue(dis, frags);
             } else {
                 int length = dis.length();
                 dos.writeHeader(Tag.Item, null, length);
@@ -455,6 +482,15 @@ public class Transcoder implements Closeable {
         }
         if (padding != 0)
             dos.write(0);
+    }
+
+    private void skipPixelData() throws IOException {
+        int length = dis.length();
+        if (length == -1) {
+            dis.readValue(dis, dataset);
+        } else {
+            StreamUtils.skipFully(dis, length);
+        }
     }
 
     private void copyPixelData() throws IOException {
@@ -819,6 +855,7 @@ public class Transcoder implements Closeable {
                 fmi.setString(Tag.TransferSyntaxUID, VR.UI, destTransferSyntax);
         }
         dos.writeDataset(fmi, dataset);
+        fileMetaInformation = fmi;
     }
 
     private void initBufferedImage() {

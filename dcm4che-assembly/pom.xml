@@ -42,7 +42,7 @@
   <parent>
     <artifactId>dcm4che-parent</artifactId>
     <groupId>org.dcm4che</groupId>
-    <version>5.22.0</version>
+    <version>5.22.3</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>dcm4che-assembly</artifactId>
@@ -430,6 +430,11 @@
     </dependency>
     <dependency>
       <groupId>org.dcm4che.tool</groupId>
+      <artifactId>dcm4che-tool-planarconfig</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.dcm4che.tool</groupId>
       <artifactId>dcm4che-tool-stgcmtscu</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -461,6 +466,11 @@
     <dependency>
       <groupId>org.dcm4che.tool</groupId>
       <artifactId>dcm4che-tool-syslogd</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.dcm4che.tool</groupId>
+      <artifactId>dcm4che-tool-tpl2xml</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
