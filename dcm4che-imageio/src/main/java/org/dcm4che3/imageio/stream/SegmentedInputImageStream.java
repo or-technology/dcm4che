@@ -339,8 +339,15 @@ public class SegmentedInputImageStream extends ImageInputStreamImpl {
             if (fragments instanceof Fragments)
             {
                 Fragments frags = (Fragments) fragments;
-                byte[] data = (byte[]) frags.get(1);
-                return data.length;
+                if (frags.size() > 1)
+                {
+                    Object fragment1 = frags.get(1);
+                    if (!(fragment1 instanceof BulkData))
+                    {
+                        byte[] data = (byte[]) fragment1;
+                        return data.length;
+                    }
+                }
             }
             long wasPos = this.getStreamPosition();
             seek(Long.MAX_VALUE);
