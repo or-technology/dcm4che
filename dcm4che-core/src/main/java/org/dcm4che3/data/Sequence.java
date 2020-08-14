@@ -55,10 +55,28 @@ public class Sequence extends ArrayList<Attributes> implements Value {
 
     private final Attributes parent;
     private int length = -1;
+    private volatile boolean readOnly;
 
     Sequence(Attributes parent, int initialCapacity) {
         super(initialCapacity);
         this.parent = parent;
+    }
+
+    public boolean isReadOnly() {
+        return readOnly;
+    }
+
+    public void setReadOnly() {
+        this.readOnly = true;
+        for (Attributes attrs : this) {
+            attrs.setReadOnly();
+        }
+    }
+
+    private void ensureModifiable() {
+        if (readOnly) {
+            throw new UnsupportedOperationException("read-only");
+        }
     }
 
     public final Attributes getParent() {
@@ -66,6 +84,7 @@ public class Sequence extends ArrayList<Attributes> implements Value {
     }
 
     public void trimToSize(boolean recursive) {
+        ensureModifiable();
         super.trimToSize();
         if (recursive)
             for (Attributes attrs: this)
@@ -74,16 +93,19 @@ public class Sequence extends ArrayList<Attributes> implements Value {
 
     @Override
     public boolean add(Attributes attrs) {
+        ensureModifiable();
         return super.add(attrs.setParent(parent));
     }
 
     @Override
     public void add(int index, Attributes attrs) {
+        ensureModifiable();
         super.add(index, attrs.setParent(parent));
     }
 
     @Override
     public boolean addAll(Collection<? extends Attributes> c) {
+        ensureModifiable();
         setParent(c);
         return super.addAll(c);
     }
@@ -104,12 +126,14 @@ public class Sequence extends ArrayList<Attributes> implements Value {
 
     @Override
     public boolean addAll(int index, Collection<? extends Attributes> c) {
+        ensureModifiable();
         setParent(c);
         return super.addAll(index, c);
     }
 
     @Override
     public void clear() {
+        ensureModifiable();
         for (Attributes attrs: this)
             attrs.setParent(null);
         super.clear();
@@ -117,11 +141,13 @@ public class Sequence extends ArrayList<Attributes> implements Value {
 
     @Override
     public Attributes remove(int index) {
+        ensureModifiable();
         return super.remove(index).setParent(null);
     }
 
     @Override
     public boolean remove(Object o) {
+        ensureModifiable();
         if (o instanceof Attributes && super.remove(o)) {
             ((Attributes) o).setParent(null);
             return true;
@@ -131,6 +157,7 @@ public class Sequence extends ArrayList<Attributes> implements Value {
 
     @Override
     public Attributes set(int index, Attributes attrs) {
+        ensureModifiable();
         return super.set(index, attrs.setParent(parent));
     }
 

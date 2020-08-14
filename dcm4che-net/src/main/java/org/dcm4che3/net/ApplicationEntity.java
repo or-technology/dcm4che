@@ -427,7 +427,7 @@ public class ApplicationEntity implements Serializable {
         return roleSelectionNegotiationLenient;
     }
 
-    public void setRoleSelectionNegotiationLenient(Boolean installed) {
+    public void setRoleSelectionNegotiationLenient(Boolean roleSelectionNegotiationLenient) {
         this.roleSelectionNegotiationLenient = roleSelectionNegotiationLenient;
     }
 
@@ -528,6 +528,11 @@ public class ApplicationEntity implements Serializable {
     public TransferCapability getTransferCapabilityFor(
             String sopClass, TransferCapability.Role role) {
         return (role == TransferCapability.Role.SCU ? scuTCs : scpTCs).get(sopClass);
+    }
+
+    public boolean hasTransferCapabilityFor(
+            String sopClass, TransferCapability.Role role) {
+        return (role == TransferCapability.Role.SCU ? scuTCs : scpTCs).containsKey(sopClass);
     }
 
     protected PresentationContext negotiate(AAssociateRQ rq, AAssociateAC ac,

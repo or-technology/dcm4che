@@ -162,19 +162,21 @@
         <include>org.dcm4che.tool:dcm4che-tool-mppsscp</include>
         <include>org.dcm4che.tool:dcm4che-tool-mppsscu</include>
         <include>org.dcm4che.tool:dcm4che-tool-pdf2dcm</include>
+        <include>org.dcm4che.tool:dcm4che-tool-planarconfig</include>
         <include>org.dcm4che.tool:dcm4che-tool-storescp</include>
         <include>org.dcm4che.tool:dcm4che-tool-storescu</include>
         <include>org.dcm4che.tool:dcm4che-tool-stgcmtscu</include>
         <include>org.dcm4che.tool:dcm4che-tool-swappxdata</include>
         <include>org.dcm4che.tool:dcm4che-tool-syslog</include>
         <include>org.dcm4che.tool:dcm4che-tool-syslogd</include>
+        <include>org.dcm4che.tool:dcm4che-tool-tpl2xml</include>
         <include>org.dcm4che.tool:dcm4che-tool-upsscu</include>
         <include>org.dcm4che.tool:dcm4che-tool-wadors</include>
         <include>org.dcm4che.tool:dcm4che-tool-wadows</include>
         <include>org.dcm4che.tool:dcm4che-tool-xml2dcm</include>
         <include>org.dcm4che.tool:dcm4che-tool-xml2hl7</include>
         <include>org.dcm4che.tool.ihe:dcm4che-tool-ihe-modality</include>
-        <include>org.weasis.opencv:weasis-opencv-core</include>
+        <include>org.weasis.core:weasis-core-img</include>
         <include>com.sun.media:jai_imageio</include>
         <include>com.sun.media:clibwrapper_jiio</include>
         <include>org.slf4j:slf4j-api</include>

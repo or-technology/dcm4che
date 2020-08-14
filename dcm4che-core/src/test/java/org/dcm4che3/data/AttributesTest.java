@@ -774,6 +774,36 @@ public class AttributesTest {
     }
 
     @Test
+    public void testPreserveDuplicatePrivateCreator() {
+        Attributes original = new Attributes();
+        original.setString(0x00990010, VR.LO, "PrivateCreatorA");
+        original.setString(0x00990020, VR.LO, "PrivateCreatorA");
+        original.setString(0x00991001, VR.LO, "Private1");
+        original.setString(0x00992001, VR.LO, "Private2");
+        Attributes copy = new Attributes(original);
+        assertEquals("PrivateCreatorA", copy.getString(0x00990010));
+        assertEquals("PrivateCreatorA", copy.getString(0x00990020));
+        assertEquals("Private1", copy.getString(0x00991001));
+        assertEquals("Private2", copy.getString(0x00992001));
+    }
+
+    @Test
+    public void testMergePrivateGroups() {
+        Attributes attrs = new Attributes();
+        attrs.setString("PrivateCreatorA", 0x00990001, VR.LO, "1A");
+        Attributes other = new Attributes();
+        other.setString("PrivateCreatorB", 0x00990001, VR.LO, "1B");
+        other.setString("PrivateCreatorA", 0x00990002, VR.LO, "2A");
+        attrs.addAll(other);
+        assertEquals(5, attrs.size());
+        assertEquals("PrivateCreatorA", attrs.getString(0x00990010));
+        assertEquals("PrivateCreatorB", attrs.getString(0x00990011));
+        assertEquals("1A", attrs.getString(0x00991001));
+        assertEquals("2A", attrs.getString(0x00991002));
+        assertEquals("1B", attrs.getString(0x00991101));
+    }
+
+    @Test
     public void testRemoveOverlayData() {
         Attributes attrs = new Attributes();
         attrs.setNull(Tag.SpecificCharacterSet, VR.CS);
@@ -842,6 +872,17 @@ public class AttributesTest {
     }
 
     @Test
+    public void testAddCompatibleCharacterSet2() {
+        Attributes a = new Attributes();
+        a.setString(Tag.SpecificCharacterSet, VR.CS, "ISO_IR 100");
+        a.setBytes(Tag.PatientName, VR.PN, "Äneas^Rüdiger".getBytes(StandardCharsets.ISO_8859_1));
+        a.setString(Tag.PatientSex, VR.CS, "M");
+        Attributes b = new Attributes();
+        b.setNull(Tag.PatientName, VR.PN);
+        b.addSelected(a, Tag.PatientSex);
+    }
+
+    @Test
     public void testGetValuePrivateCreatorSh() {
         Attributes dataset = new Attributes();
 
@@ -856,5 +897,30 @@ public class AttributesTest {
         dataset.setString(resolvedPrivateTag, VR.LO, privateValue);
 
         assertEquals(privateValue, dataset.getString(shPrivateCreator, privateTag));
+    }
+
+    @Test
+    public void testReadOnly() {
+        Attributes attrs = new Attributes();
+        Sequence seq = attrs.newSequence(Tag.OtherPatientIDsSequence, 1);
+        Attributes otherPID = new Attributes();
+        otherPID.setString(Tag.PatientID, VR.LO, "PatientID");
+        otherPID.setString(Tag.IssuerOfPatientID, VR.LO, "IssuerOfPatientID");
+        seq.add(otherPID);
+        attrs.setReadOnly();
+        assertTrue(otherPID.isReadOnly());
+        assertEquals("PatientID", otherPID.getString(Tag.PatientID));
+        try {
+            otherPID.setString(Tag.PatientID, VR.LO, "ChangedPatientID");
+            fail("Expected exception: java.lang.UnsupportedOperationException");
+        } catch (UnsupportedOperationException expected) {}
+        try {
+            otherPID.remove(Tag.PatientID);
+            fail("Expected exception: java.lang.UnsupportedOperationException");
+        } catch (UnsupportedOperationException expected) {}
+        try {
+            seq.clear();
+            fail("Expected exception: java.lang.UnsupportedOperationException");
+        } catch (UnsupportedOperationException expected) {}
     }
 }

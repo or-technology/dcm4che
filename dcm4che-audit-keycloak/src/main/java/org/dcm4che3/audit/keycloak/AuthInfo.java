@@ -45,6 +45,7 @@ import org.keycloak.events.Event;
 import org.keycloak.events.admin.AdminEvent;
 import org.keycloak.events.admin.AuthDetails;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.UserModel;
 
 /**
  * @author Vrinda Nayak <vrinda.nayak@j4care.com>
@@ -56,6 +57,7 @@ class AuthInfo {
     static final int EVENT = 2;
     static final int RESOURCE_PATH = 3;
     static final int REPRESENTATION = 4;
+    static final int REALM = 5;
     private final String[] fields;
 
     AuthInfo (Event event, KeycloakSession keycloakSession) {
@@ -72,13 +74,20 @@ class AuthInfo {
 
     AuthInfo (AdminEvent adminEvent, KeycloakSession keycloakSession) {
         AuthDetails authDetails = adminEvent.getAuthDetails();
+        String userRealmID = adminEvent.getAuthDetails().getRealmId();
+        boolean realmsMatch = userRealmID.equals(keycloakSession.getContext().getRealm().getName());
+        UserModel userById = keycloakSession.users().getUserById(
+                                authDetails.getUserId(),
+                                realmsMatch
+                                ? keycloakSession.getContext().getRealm()
+                                : keycloakSession.realms().getRealm(userRealmID));
         fields = new String[] {
-                keycloakSession.users().getUserById(authDetails.getUserId(), keycloakSession.getContext().getRealm())
-                        .getUsername(),
+                userById.getUsername(),
                 authDetails.getIpAddress(),
                 adminEvent.getOperationType() + " " + adminEvent.getResourceType(),
                 adminEvent.getResourcePath(),
-                adminEvent.getRepresentation()
+                adminEvent.getRepresentation(),
+                !realmsMatch ? userRealmID : null
         };
     }
 
